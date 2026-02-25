@@ -76,7 +76,7 @@ pclean/
 
 ## License
 
-GPL-2.0-or-later (same as CASA)
+GPL-3.0-or-later — see [LICENSE](LICENSE) for details.
 
 ## AI Disclosure
 
