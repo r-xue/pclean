@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+.pixi/
+.conda/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# CASA artifacts
+*.log
+*.last
+working/
+*.tmpdir/
+
+# CASA image tables (casacore table format)
+*.psf/
+*.psf.tt*/
+*.residual/
+*.residual.tt*/
+*.model/
+*.model.tt*/
+*.image/
+*.image.tt*/
+*.image.pbcor/
+*.image.pbcor.tt*/
+*.pb/
+*.pb.tt*/
+*.sumwt/
+*.sumwt.tt*/
+*.weight/
+*.weight.tt*/
+*.mask/
+*.subcube.*/
+s5_0.VLASS*
+oussid.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
