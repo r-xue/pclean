@@ -3,6 +3,7 @@ Tests for pclean.params — parameter container & validation.
 """
 
 import copy
+import os
 import pytest
 from pclean.params import PcleanParams
 
@@ -149,3 +150,118 @@ class TestRowChunkParams:
         rp = p.make_rowchunk_params(sub_sel, "0")
         assert "part.0" in rp.imagename
         assert rp.allselpars["0"]["taql"] == "ROWID() < 1000"
+
+
+class TestCubeChunksize:
+    """cube_chunksize parameter and nparts computation."""
+
+    def test_default_chunksize(self):
+        p = PcleanParams(vis="a.ms", parallel=True)
+        assert p.parallelpars["cube_chunksize"] == -1
+
+    def test_custom_chunksize(self):
+        p = PcleanParams(vis="a.ms", parallel=True, cube_chunksize=1)
+        assert p.parallelpars["cube_chunksize"] == 1
+
+    def test_chunksize_serialization(self):
+        p = PcleanParams(vis="a.ms", parallel=True, cube_chunksize=4)
+        d = p.to_dict()
+        p2 = PcleanParams.from_dict(d)
+        assert p2.parallelpars["cube_chunksize"] == 4
+
+    def test_nparts_from_chunksize(self):
+        """_compute_nparts returns ceil(nchan / chunksize)."""
+        import math
+
+        class FakeCluster:
+            client = None
+            worker_count = 5
+
+        p = PcleanParams(
+            vis="a.ms", specmode="cube", nchan=117,
+            parallel=True, cube_chunksize=1,
+        )
+        from pclean.parallel.cube_parallel import ParallelCubeImager
+        engine = ParallelCubeImager(p, FakeCluster())
+        # chunksize=1 → 117 tasks (one per channel)
+        assert engine._compute_nparts(5) == 117
+
+    def test_nparts_default_is_nworkers(self):
+        """chunksize=-1 falls back to nparts=nworkers."""
+
+        class FakeCluster:
+            client = None
+            worker_count = 5
+
+        p = PcleanParams(
+            vis="a.ms", specmode="cube", nchan=117,
+            parallel=True, cube_chunksize=-1,
+        )
+        from pclean.parallel.cube_parallel import ParallelCubeImager
+        engine = ParallelCubeImager(p, FakeCluster())
+        assert engine._compute_nparts(5) == 5
+
+    def test_nparts_grouped(self):
+        """chunksize=10 → ceil(117/10) = 12 tasks."""
+        import math
+
+        class FakeCluster:
+            client = None
+            worker_count = 5
+
+        p = PcleanParams(
+            vis="a.ms", specmode="cube", nchan=117,
+            parallel=True, cube_chunksize=10,
+        )
+        from pclean.parallel.cube_parallel import ParallelCubeImager
+        engine = ParallelCubeImager(p, FakeCluster())
+        assert engine._compute_nparts(5) == math.ceil(117 / 10)
+
+
+class TestKeepSubcubes:
+    """keep_subcubes parameter and cleanup behaviour."""
+
+    def test_default_keep_subcubes_false(self):
+        p = PcleanParams(vis="a.ms", parallel=True)
+        assert p.parallelpars["keep_subcubes"] is False
+
+    def test_keep_subcubes_true(self):
+        p = PcleanParams(vis="a.ms", parallel=True, keep_subcubes=True)
+        assert p.parallelpars["keep_subcubes"] is True
+
+    def test_keep_subcubes_serialization(self):
+        p = PcleanParams(vis="a.ms", parallel=True, keep_subcubes=True)
+        d = p.to_dict()
+        p2 = PcleanParams.from_dict(d)
+        assert p2.parallelpars["keep_subcubes"] is True
+
+    def test_cleanup_removes_subcube_dirs(self, tmp_path):
+        """_cleanup_subcubes removes .subcube.N images and tmpdirs."""
+        from pclean.parallel.cube_parallel import ParallelCubeImager
+
+        base = str(tmp_path / "testimg")
+        nparts = 3
+        extensions = [".image", ".residual", ".psf"]
+
+        # Create fake subcube directories and tmpdirs
+        created = []
+        for i in range(nparts):
+            for ext in extensions:
+                d = f"{base}.subcube.{i}{ext}"
+                os.makedirs(d)
+                created.append(d)
+            tmpdir = str(tmp_path / f".testimg.subcube.{i}.tmpdir")
+            os.makedirs(tmpdir)
+            created.append(tmpdir)
+
+        ParallelCubeImager._cleanup_subcubes(base, nparts)
+
+        for d in created:
+            assert not os.path.exists(d), f"{d} should have been removed"
+
+    def test_cleanup_ignores_missing(self, tmp_path):
+        """_cleanup_subcubes does not fail when artifacts don't exist."""
+        from pclean.parallel.cube_parallel import ParallelCubeImager
+        base = str(tmp_path / "noimg")
+        # Should not raise
+        ParallelCubeImager._cleanup_subcubes(base, 4)

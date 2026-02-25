@@ -135,6 +135,8 @@ def pclean(
     threads_per_worker: int = 1,
     memory_limit: str = "auto",
     local_directory: Optional[str] = None,
+    cube_chunksize: int = -1,
+    keep_subcubes: bool = False,
 ) -> dict:
     """
     Parallel CLEAN imaging — tclean-compatible interface.
@@ -148,6 +150,14 @@ def pclean(
     * **threads_per_worker** — threads per Dask worker (default 1).
     * **memory_limit** — per-worker memory cap.
     * **local_directory** — Dask scratch directory.
+    * **cube_chunksize** — channels per sub-cube task for cube parallelism.
+      ``-1`` (default) sets ``nparts = nworkers``;
+      ``1`` creates one task per channel (maximum load balancing);
+      ``N`` groups N channels per task.
+    * **keep_subcubes** — if ``True``, preserve intermediate sub-cube
+      images and per-worker temp directories after concatenation.
+      Useful for debugging or downstream per-channel analysis.
+      Default ``False`` removes them to save disk space.
 
     Returns
     -------
@@ -199,6 +209,8 @@ def pclean(
         scheduler_address=scheduler_address,
         threads_per_worker=threads_per_worker,
         memory_limit=memory_limit, local_directory=local_directory,
+        cube_chunksize=cube_chunksize,
+        keep_subcubes=keep_subcubes,
     )
 
     params = PcleanParams(vis=vis, **kwargs)

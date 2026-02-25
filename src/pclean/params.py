@@ -148,6 +148,8 @@ _DEFAULT_PARALLEL = dict(
     threads_per_worker=1,
     memory_limit="auto",
     local_directory=None,
+    cube_chunksize=-1,       # -1 → nparts=nworkers; 1 → per-channel; N → N ch/task
+    keep_subcubes=False,     # preserve subcube artifacts after concatenation
 )
 
 
