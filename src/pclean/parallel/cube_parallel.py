@@ -67,14 +67,43 @@ class ParallelCubeImager:
         log.info("Cube imaging: %d sub-cubes on %d workers",
                  nparts, nworkers)
 
-        # 3. Submit each sub-cube as an independent task
-        futures = []
-        for sp in self._subcube_params:
-            f = client.submit(run_subcube, sp.to_dict(), pure=False)
-            futures.append(f)
+        # 3. Submit sub-cubes with bounded concurrency.
+        #    Using ``as_completed`` keeps at most *nworkers* tasks
+        #    in-flight, preventing the Dask scheduler from queuing
+        #    all tasks upfront and reducing casacore table-cache
+        #    pressure on reused worker processes.
+        from dask.distributed import as_completed
 
-        # 4. Gather results
-        summaries = client.gather(futures)
+        summaries: list[dict | None] = [None] * nparts
+        # Map future → index so we can preserve ordering.
+        future_to_idx: dict = {}
+        pending: list = []
+
+        # Seed the initial batch (up to nworkers tasks).
+        batch_end = min(nworkers, nparts)
+        for i in range(batch_end):
+            f = client.submit(run_subcube,
+                              self._subcube_params[i].to_dict(),
+                              pure=False)
+            future_to_idx[f] = i
+            pending.append(f)
+
+        next_idx = batch_end  # next subcube to submit
+
+        ac = as_completed(pending)
+        for completed_future in ac:
+            idx = future_to_idx.pop(completed_future)
+            summaries[idx] = completed_future.result()
+
+            # Submit the next subcube (if any) to keep the pipeline full.
+            if next_idx < nparts:
+                f = client.submit(run_subcube,
+                                  self._subcube_params[next_idx].to_dict(),
+                                  pure=False)
+                future_to_idx[f] = next_idx
+                ac.add(f)
+                next_idx += 1
+
         log.info("All %d sub-cubes completed", nparts)
 
         # 5. Concatenate sub-cube images into final output

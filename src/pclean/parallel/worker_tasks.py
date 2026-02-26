@@ -22,6 +22,66 @@ log = logging.getLogger(__name__)
 
 
 # ======================================================================
+# Table cache helpers
+# ======================================================================
+
+
+def _flush_table_cache(imagename: str) -> None:
+    """Best-effort cleanup of the casacore table cache after a subcube task.
+
+    casacore maintains a process-global ``TableCache`` that persists
+    across Dask tasks executed in the same worker process.  Stale
+    cache entries from a previous subcube can cause the next subcube's
+    ``SetupNewTable`` call to fail with *"is already opened (is in
+    the table cache)"*.
+
+    This helper:
+    1. Calls ``.done()`` on temporary casatools table objects to release
+       any lingering C++ references.
+    2. Clears table lock files via ``tb.clearlocks()``.
+    3. Forces Python garbage collection so C++ shared-pointer ref
+       counts drop to zero, allowing the table cache to evict entries.
+    """
+    import gc
+    import os
+
+    gc.collect()
+
+    try:
+        from casatools import table as tbtool
+
+        tb = tbtool()
+
+        # Release lock files for all image products of this subcube.
+        _EXTENSIONS = (
+            ".psf", ".residual", ".model", ".image", ".pb",
+            ".sumwt", ".weight", ".mask", ".image.pbcor",
+        )
+        for ext in _EXTENSIONS:
+            img_path = imagename + ext
+            if os.path.isdir(img_path):
+                try:
+                    tb.clearlocks(img_path)
+                except Exception:
+                    pass
+
+        # Log residual cache entries (debug-level) so developers can
+        # see if entries are accumulating across tasks.
+        cached = tb.showcache(verbose=False)
+        if cached:
+            log.debug(
+                "Table cache has %d entries after subcube task (%s …)",
+                len(cached), cached[0] if cached else "",
+            )
+
+        tb.done()
+    except Exception:
+        pass
+
+    gc.collect()
+
+
+# ======================================================================
 # Full sub-cube imaging (for cube parallelism)
 # ======================================================================
 
@@ -73,9 +133,16 @@ def run_subcube(params_dict: dict) -> dict:
     try:
         os.chdir(workdir)
         imager = SerialImager(params, init_iter_control=True)
-        return imager.run()
+        result = imager.run()
+        return result
     finally:
         os.chdir(orig_cwd)
+        # Clean up casacore table cache entries left by this task.
+        # Without this, Dask worker process reuse causes stale table
+        # cache entries to accumulate, triggering
+        # "SetupNewTable ... is already opened (is in the table cache)"
+        # warnings when the next subcube task runs on the same worker.
+        _flush_table_cache(abs_imgname)
 
 
 # ======================================================================

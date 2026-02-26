@@ -24,6 +24,8 @@ Public API
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 
 from pclean.params import PcleanParams
 
@@ -140,6 +142,17 @@ class SerialImager:
         last = False
         if self.ib_tool is not None:
             last = self.ib_tool.cleanComplete(lastcyclecheck=True)
+
+        # Work around casacore table-cache bug: the mask0 subtable
+        # created on the residual image during a previous major cycle
+        # can stay in the process-global table cache even after
+        # SIImageStore::removeMask deletes it.  The subsequent
+        # SetupNewTable for the same path then fails with
+        # "is already opened (is in the table cache)".
+        # Removing the stale mask0 directory from disk lets
+        # SetupNewTable succeed because the path no longer exists.
+        if not is_first and self._major_count > 0:
+            self._evict_residual_mask()
 
         controls = {"lastcycle": last}
         self.si_tool.executemajorcycle(controls=controls)
@@ -312,6 +325,39 @@ class SerialImager:
         self.ib_tool.setupiteration(iterpars=dict(self.params.iterpars))
 
     # -- normalization helpers -----------------------------------------
+
+    def _evict_residual_mask(self) -> None:
+        """Remove stale ``mask0`` subtable from residual images.
+
+        The casacore ``TableCache`` is process-global.  When
+        ``SIImageStore::copyMask`` creates ``mask0`` inside the
+        residual image during one major cycle, the subtable enters
+        the cache.  On the *next* major cycle, ``removeMask`` deletes
+        ``mask0`` from the image metadata but the cache entry lingers
+        (a casacore bug).  The subsequent ``SetupNewTable`` for the
+        same path then fails with *"is already opened (is in the
+        table cache)"*.
+
+        By deleting the ``mask0`` directory from disk *before*
+        ``executemajorcycle`` is called, we ensure ``SetupNewTable``
+        can create a fresh subtable even if the cache still has a
+        stale entry (casacore's ``SetupNewTable`` only blocks when
+        the path physically exists AND is in the cache).
+        """
+        imagename = self.params.allimpars["0"]["imagename"]
+        nterms = self.params.alldecpars.get("0", {}).get("nterms", 1)
+        extensions = [".residual"]
+        if nterms > 1:
+            extensions = [f".residual.tt{t}" for t in range(nterms)]
+        for ext in extensions:
+            mask_dir = f"{imagename}{ext}/mask0"
+            if os.path.isdir(mask_dir):
+                try:
+                    shutil.rmtree(mask_dir)
+                    log.debug("Removed stale mask subtable: %s", mask_dir)
+                except OSError:
+                    log.debug("Could not remove mask subtable: %s",
+                              mask_dir, exc_info=True)
 
     def _normalize_psf(self) -> None:
         for fld in self.sn_tools:

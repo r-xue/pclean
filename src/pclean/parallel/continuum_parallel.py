@@ -126,7 +126,7 @@ class ParallelContinuumImager:
     # ------------------------------------------------------------------
 
     def _partition_data(self) -> None:
-        nworkers = self.cluster.worker_count
+        nworkers = self.cluster.nworkers
         self._part_params = partition_continuum(self.params, nworkers)
         log.info("Continuum imaging: %d row-chunks on %d workers",
                  len(self._part_params), nworkers)

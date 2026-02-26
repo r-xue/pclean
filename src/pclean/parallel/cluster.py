@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pprint import pformat
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _dask_distributed = None
-
+QUEUE_WAIT = 60
 
 def _dd():
     global _dask_distributed
@@ -95,13 +96,44 @@ class DaskClusterManager:
             log.info("Starting LocalCluster with %d workers", self.nworkers)
             self._cluster = dd.LocalCluster(
                 n_workers=self.nworkers,
+                processes=True,
                 threads_per_worker=self.threads_per_worker,
                 memory_limit=self.memory_limit,
                 local_directory=self.local_directory,
             )
             self._client = dd.Client(self._cluster)
 
+
+        # Block until all requested workers have registered with the
+        # scheduler.  Without this, worker_count can return a smaller
+        # number than nworkers due to a startup race condition.
+        self._client.wait_for_workers(self.nworkers, timeout=QUEUE_WAIT)
+
+        # Verify the cluster actually created the requested workers
+        actual = len(self._cluster.workers)
+        if actual != self.nworkers:
+            log.warning(
+                "Requested %d workers but LocalCluster only created %d "
+                "(system may lack resources). Adjusting nworkers.",
+                self.nworkers, actual,
+            )
+            self.nworkers = actual
+
+        log.info("Dask cluster ready: %d workers registered",
+                 self.worker_count)
+        
         log.info("Dask dashboard: %s", self._client.dashboard_link)
+        log.info('   client:  %s', self._client)
+        log.info('   cluster: %s', self._client.cluster)
+
+        def get_status(dask_worker) -> tuple[str, str]:
+            return dask_worker.status, dask_worker.id
+
+        status: dict[str, tuple[str, str]] = self._client.run(get_status)
+        
+        if status:
+            log.info('worker status: \n %s', pformat(status))            
+
         return self
 
     def shutdown(self) -> None:
@@ -126,6 +158,12 @@ class DaskClusterManager:
 
     @property
     def worker_count(self) -> int:
+        """Number of workers currently registered with the scheduler.
+
+        Note that this can be less than the requested nworkers due to
+        resource constraints or startup issues. The cluster manager will log
+        a warning and adjust nworkers accordingly.
+        """
         return len(self.client.scheduler_info()["workers"])
 
     # ------------------------------------------------------------------
