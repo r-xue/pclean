@@ -66,7 +66,7 @@ jobs:
         id: cache-testdata
         with:
           path: pipeline-testdata
-          key: pipeline-testdata-unit-${{ steps.testdata-commit.outputs.sha }}
+          key: pipeline-testdata-unit-vlassql-${{ steps.testdata-commit.outputs.sha }}
 
       - name: Checkout and LFS pull test data
         if: steps.cache-testdata.outputs.cache-hit != 'true'
@@ -76,7 +76,9 @@ jobs:
               https://open-bitbucket.nrao.edu/scm/pipe/pipeline-testdata.git pipeline-testdata
           fi
           cd pipeline-testdata
-          git sparse-checkout set pl-unittest
+          git sparse-checkout set \
+            pl-unittest \
+            pl-regressiontest/vlass_quicklook/TSKY0001.sb32295801.eb32296475.57549.31722762731_split_withcorrectdata.ms
           git lfs pull
 
       # ---- Tests -------------------------------------------------------
