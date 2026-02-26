@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from typing import Any, Dict, List, Optional
 
 from pclean.params import PcleanParams
@@ -111,6 +112,11 @@ class ParallelContinuumImager:
                     self._deconvolver.restore()
                 if self.params.alldecpars["0"].get("pbcor", False):
                     self._deconvolver.pbcor()
+
+            # Clean up partial images unless keep_partimages is set
+            keep = self.params.parallelpars.get('keep_partimages', False)
+            if not keep:
+                self._cleanup_partimages()
 
             return self._summary()
         finally:
@@ -219,6 +225,27 @@ class ParallelContinuumImager:
         nmajor = self.params.iterpars.get("nmajor", -1)
         reached = nmajor > 0 and self._major_count >= nmajor
         return self._ib_tool.cleanComplete(reachedMajorLimit=reached)
+
+    # ------------------------------------------------------------------
+    # Private — partial-image cleanup
+    # ------------------------------------------------------------------
+
+    def _cleanup_partimages(self) -> None:
+        """Remove intermediate per-worker partial images."""
+        extensions = [
+            '.image', '.residual', '.psf', '.model', '.pb',
+            '.image.pbcor', '.mask', '.weight', '.sumwt',
+        ]
+        removed = 0
+        for pp in self._part_params:
+            abs_name = os.path.abspath(pp.imagename)
+            for ext in extensions:
+                path = f'{abs_name}{ext}'
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                    removed += 1
+        if removed:
+            log.info('Cleaned up %d partial-image artifacts', removed)
 
     # ------------------------------------------------------------------
     # Summary

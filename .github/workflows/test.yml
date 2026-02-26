@@ -27,6 +27,59 @@ jobs:
           environments: test
           cache: false
 
+      # ---- CASA runtime data -------------------------------------------
+      - name: Configure CASA
+        shell: bash
+        run: |
+          mkdir -p ~/.casa
+          mkdir -p casarundata
+          cat > ~/.casa/config.py << PYEOF
+          measurespath = "$GITHUB_WORKSPACE/casarundata"
+          datapath = [ "$GITHUB_WORKSPACE/casarundata", "$GITHUB_WORKSPACE/pipeline-testdata" ]
+          measures_auto_update = True
+          data_auto_update = True
+          PYEOF
+
+      - name: Cache casarundata
+        uses: actions/cache@v4
+        with:
+          path: casarundata
+          key: casarundata
+
+      - name: Fetch casarundata
+        shell: bash
+        run: |
+          pixi run -e test python -c "import casatools" || {
+            echo 'casatools import failed; casarundata may be incomplete.' >&2
+            exit 1
+          }
+
+      # ---- Pipeline unit-test data -------------------------------------
+      - name: Get latest testdata commit hash
+        id: testdata-commit
+        shell: bash
+        run: |
+          echo "sha=$(git ls-remote https://open-bitbucket.nrao.edu/scm/pipe/pipeline-testdata.git HEAD | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pipeline-testdata
+        uses: actions/cache@v4
+        id: cache-testdata
+        with:
+          path: pipeline-testdata
+          key: pipeline-testdata-unit-${{ steps.testdata-commit.outputs.sha }}
+
+      - name: Checkout and LFS pull test data
+        if: steps.cache-testdata.outputs.cache-hit != 'true'
+        run: |
+          if [ ! -d "pipeline-testdata/.git" ]; then
+            git clone --filter=blob:none --sparse \
+              https://open-bitbucket.nrao.edu/scm/pipe/pipeline-testdata.git pipeline-testdata
+          fi
+          cd pipeline-testdata
+          git sparse-checkout set pl-unittest
+          git lfs pull
+
+      # ---- Tests -------------------------------------------------------
       - name: Run tests
         run: pixi run -e test pytest tests/ -v --tb=short
 

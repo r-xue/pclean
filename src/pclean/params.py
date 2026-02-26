@@ -159,6 +159,7 @@ _DEFAULT_PARALLEL = dict(
     local_directory=None,
     cube_chunksize=-1,       # -1 → nparts=nworkers; 1 → per-channel; N → N ch/task
     keep_subcubes=False,     # preserve subcube artifacts after concatenation
+    keep_partimages=False,   # preserve partial images after continuum gather
 )
 
 

@@ -137,6 +137,7 @@ def pclean(
     local_directory: Optional[str] = None,
     cube_chunksize: int = -1,
     keep_subcubes: bool = False,
+    keep_partimages: bool = False,
 ) -> dict:
     """
     Parallel CLEAN imaging — tclean-compatible interface.
@@ -158,6 +159,9 @@ def pclean(
       images and per-worker temp directories after concatenation.
       Useful for debugging or downstream per-channel analysis.
       Default ``False`` removes them to save disk space.
+    * **keep_partimages** — if ``True``, preserve partial images
+      produced by each worker during continuum (MFS) imaging.
+      Default ``False`` removes them after gathering.
 
     Returns
     -------
@@ -211,6 +215,7 @@ def pclean(
         memory_limit=memory_limit, local_directory=local_directory,
         cube_chunksize=cube_chunksize,
         keep_subcubes=keep_subcubes,
+        keep_partimages=keep_partimages,
     )
 
     params = PcleanParams(vis=vis, **kwargs)

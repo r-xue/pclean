@@ -2,11 +2,9 @@ import os
 import shutil
 import pytest
 from pclean import pclean
+from casatools import ctsys
 
-# Define the path to the test data - localized for the user's environment
-DATA_PATH = '/home/rxue/Workspace/zfs/nrao/tests/projs/pltest_small/casa663_mpi/working'
-MS_NAME = 'uid___A002_Xc46ab2_X15ae_repSPW_spw16_17_small_targets.ms'
-MS_PATH = os.path.join(DATA_PATH, MS_NAME)
+MS_PATH = ctsys.resolve("pl-unittest/uid___A002_Xc46ab2_X15ae_repSPW_spw16_17_small_target.ms")
 
 
 @pytest.mark.skipif(not os.path.exists(MS_PATH), reason=f"Test data not found at {MS_PATH}")
