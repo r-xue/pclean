@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from typing import Any, Dict, List, Optional
 
 from pclean.params import PcleanParams
 from pclean.parallel.cluster import DaskClusterManager
@@ -41,7 +40,7 @@ class ParallelCubeImager:
     def __init__(self, params: PcleanParams, cluster: DaskClusterManager):
         self.params = params
         self.cluster = cluster
-        self._subcube_params: List[PcleanParams] = []
+        self._subcube_params: list[PcleanParams] = []
 
     # ------------------------------------------------------------------
     # Public

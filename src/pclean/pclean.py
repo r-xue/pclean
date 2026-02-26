@@ -20,7 +20,8 @@ Examples
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 from pclean.params import PcleanParams
 
@@ -29,7 +30,7 @@ log = logging.getLogger(__name__)
 
 def pclean(
     # --- Data selection ------------------------------------------------
-    vis: Union[str, Sequence[str]] = "",
+    vis: str | Sequence[str] = '',
     selectdata: bool = True,
     field: str = "",
     spw: str = "",
@@ -130,11 +131,11 @@ def pclean(
     psfcutoff: float = 0.35,
     # --- pclean-specific (Dask) ---------------------------------------
     parallel: bool = False,
-    nworkers: Optional[int] = None,
-    scheduler_address: Optional[str] = None,
+    nworkers: int | None = None,
+    scheduler_address: str | None = None,
     threads_per_worker: int = 1,
     memory_limit: str = "auto",
-    local_directory: Optional[str] = None,
+    local_directory: str | None = None,
     cube_chunksize: int = -1,
     keep_subcubes: bool = False,
     keep_partimages: bool = False,

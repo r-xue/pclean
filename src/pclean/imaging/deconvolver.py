@@ -10,7 +10,6 @@ deconvolution is needed.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class Deconvolver:
         self,
         imagename: str,
         decpars: dict,
-        iterpars: Optional[dict] = None,
+        iterpars: dict | None = None,
     ):
         self.imagename = imagename
         self.decpars = dict(decpars)
@@ -78,7 +77,7 @@ class Deconvolver:
         """Return peak-residual info for the iterbot."""
         return self._sd.initminorcycle()
 
-    def execute_minor(self, iterbotrecord: Optional[dict] = None) -> dict:
+    def execute_minor(self, iterbotrecord: dict | None = None) -> dict:
         """
         Run one minor cycle.
 

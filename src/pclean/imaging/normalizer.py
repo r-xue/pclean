@@ -9,7 +9,6 @@ both serial and parallel imaging.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class Normalizer:
     def __init__(
         self,
         normpars: dict,
-        partimagenames: Optional[List[str]] = None,
+        partimagenames: list[str] | None = None,
     ):
         self.normpars = dict(normpars)
         self.partimagenames = partimagenames or []

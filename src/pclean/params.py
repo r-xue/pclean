@@ -9,9 +9,8 @@ Dask workers.
 from __future__ import annotations
 
 import copy
-import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Defaults (matching tclean where possible)
@@ -207,11 +206,11 @@ class PcleanParams:
         ``memory_limit``, and ``local_directory`` keys.
     """
 
-    def __init__(self, vis: Union[str, Sequence[str]] = "", **kwargs):
+    def __init__(self, vis: str | Sequence[str] = '', **kwargs):
         vis = _ensure_list(vis) if vis else [""]
 
         # ---- selection (one dict per MS, keyed as 'ms0', 'ms1', ...) -----
-        self.allselpars: Dict[str, dict] = {}
+        self.allselpars: dict[str, dict] = {}
         for idx, msname in enumerate(vis):
             key = f'ms{idx}'
             sel = dict(_DEFAULT_SEL)
@@ -226,7 +225,7 @@ class PcleanParams:
             self.allselpars[key] = sel
 
         # ---- image definition (field 0) ---------------------------------
-        self.allimpars: Dict[str, dict] = {}
+        self.allimpars: dict[str, dict] = {}
         imp = _merge(_DEFAULT_IMG, kwargs)
         imp["imsize"] = _ensure_list(imp["imsize"])
         if len(imp["imsize"]) == 1:
@@ -238,7 +237,7 @@ class PcleanParams:
         self.allimpars["0"] = imp
 
         # ---- gridding ---------------------------------------------------
-        self.allgridpars: Dict[str, dict] = {}
+        self.allgridpars: dict[str, dict] = {}
         gp = _merge(_DEFAULT_GRID, kwargs)
         # C++ SynthesisParamsGrid expects these keys in gridpars too
         gp["imagename"] = imp["imagename"]
@@ -269,7 +268,7 @@ class PcleanParams:
         self.weightpars: dict = wp
 
         # ---- deconvolution -----------------------------------------------
-        self.alldecpars: Dict[str, dict] = {}
+        self.alldecpars: dict[str, dict] = {}
         dp = _merge(_DEFAULT_DEC, kwargs)
         dp["scales"] = _ensure_list(dp.get("scales", []))
         dp["restoringbeam"] = _ensure_list(dp.get("restoringbeam", []))
@@ -278,7 +277,7 @@ class PcleanParams:
         self.alldecpars["0"] = dp
 
         # ---- normalizer --------------------------------------------------
-        self.allnormpars: Dict[str, dict] = {}
+        self.allnormpars: dict[str, dict] = {}
         np_ = _merge(_DEFAULT_NORM, kwargs)
         np_["imagename"] = imp["imagename"]
         np_["nterms"] = dp["nterms"] if dp["deconvolver"] == "mtmfs" else 1
@@ -365,7 +364,7 @@ class PcleanParams:
         )
 
     @classmethod
-    def from_dict(cls, d: dict) -> "PcleanParams":
+    def from_dict(cls, d: dict) -> 'PcleanParams':
         """Re-hydrate from a plain dict (inverse of ``to_dict``)."""
         obj = cls.__new__(cls)
         obj.allselpars = d["allselpars"]
@@ -379,7 +378,7 @@ class PcleanParams:
         obj.parallelpars = d["parallelpars"]
         return obj
 
-    def clone(self) -> "PcleanParams":
+    def clone(self) -> 'PcleanParams':
         return PcleanParams.from_dict(self.to_dict())
 
     # ------------------------------------------------------------------
@@ -388,10 +387,10 @@ class PcleanParams:
 
     def make_subcube_params(
         self,
-        start: Union[int, str],
+        start: int | str,
         nchan: int,
         image_suffix: str,
-    ) -> "PcleanParams":
+    ) -> 'PcleanParams':
         """Return a copy tuned for a channel sub-range (cube parallelism).
 
         Parameters
@@ -419,7 +418,7 @@ class PcleanParams:
         self,
         partition_selpars: dict,
         image_suffix: str,
-    ) -> "PcleanParams":
+    ) -> 'PcleanParams':
         """Return a copy with selection pars limited to a row chunk
         (continuum parallelism)."""
         p = self.clone()

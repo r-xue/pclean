@@ -1,5 +1,5 @@
 import os
-import shutil
+
 import pytest
 from pclean import pclean
 from casatools import ctsys

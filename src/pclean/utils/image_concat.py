@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import List
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def _ct():
 
 def concat_images(
     outimage: str,
-    inimages: List[str],
+    inimages: list[str],
     axis: int = -1,
     relax: bool = True,
     overwrite: bool = True,
@@ -77,7 +76,7 @@ def concat_images(
 def concat_subcubes(
     base_imagename: str,
     nparts: int,
-    extensions: List[str] | None = None,
+    extensions: list[str] | None = None,
 ) -> None:
     """
     Concatenate all standard image products (.image, .residual, .psf, …)

@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from typing import Any, Dict, List, Optional
 
 from pclean.params import PcleanParams
 from pclean.parallel.cluster import DaskClusterManager
@@ -56,10 +55,10 @@ class ParallelContinuumImager:
         self.params = params
         self.cluster = cluster
 
-        self._part_params: List[PcleanParams] = []
+        self._part_params: list[PcleanParams] = []
         self._actors: list = []
-        self._normalizer: Optional[Normalizer] = None
-        self._deconvolver: Optional[Deconvolver] = None
+        self._normalizer: Normalizer | None = None
+        self._deconvolver: Deconvolver | None = None
         self._ib_tool = None
         self._major_count = 0
 

@@ -12,7 +12,7 @@ import copy
 import logging
 import math
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from pclean.params import PcleanParams
 
@@ -33,7 +33,7 @@ def _ct():
 # Frequency / quantity parsing helpers
 # ======================================================================
 
-_FREQ_UNITS: Dict[str, float] = {
+_FREQ_UNITS: dict[str, float] = {
     "hz": 1.0,
     "khz": 1e3,
     "mhz": 1e6,
@@ -44,7 +44,7 @@ _FREQ_UNITS: Dict[str, float] = {
 _QTY_RE = re.compile(r"^([+-]?[\d.eE+-]+)\s*([a-zA-Z/]+)$")
 
 
-def _parse_freq_hz(val: Union[int, float, str]) -> Optional[float]:
+def _parse_freq_hz(val: int | float | str) -> float | None:
     """Parse a frequency quantity string to Hz.  Returns *None* if
     the value cannot be interpreted as a frequency."""
     if isinstance(val, (int, float)):
@@ -75,7 +75,7 @@ def _format_freq_ghz(hz: float) -> str:
 def partition_continuum(
     params: PcleanParams,
     nparts: int,
-) -> List[PcleanParams]:
+) -> list[PcleanParams]:
     """
     Partition data by visibility rows for parallel continuum imaging.
 
@@ -105,13 +105,13 @@ def partition_continuum(
     finally:
         su.done()
 
-    result: List[PcleanParams] = []
+    result: list[PcleanParams] = []
     for part_idx in range(nparts):
         # contdatapartition returns a nested dict:
         #   {"0": {"ms0": {selpars}, "ms1": ...}, "1": ...}
         # outer key = partition index, inner keys = "ms0", "ms1", ...
         part_key = str(part_idx)
-        sub_sel: Dict[str, dict] = {}
+        sub_sel: dict[str, dict] = {}
         for ms_key in sorted(params.allselpars.keys()):
             if part_key in partselpars and ms_key in partselpars[part_key]:
                 sub_sel[ms_key] = partselpars[part_key][ms_key]
@@ -133,7 +133,7 @@ def partition_continuum(
 def partition_cube(
     params: PcleanParams,
     nparts: int,
-) -> List[PcleanParams]:
+) -> list[PcleanParams]:
     """
     Partition the output cube by frequency channels for parallel cube
     imaging.
@@ -183,7 +183,7 @@ def _partition_cube_via_su(
     params: PcleanParams,
     nparts: int,
     nchan: int,
-) -> List[PcleanParams]:
+) -> list[PcleanParams]:
     csys = params.allimpars["0"].get("csys", {})
     if not csys:
         raise RuntimeError(
@@ -204,7 +204,7 @@ def _partition_cube_via_su(
     finally:
         su.done()
 
-    result: List[PcleanParams] = []
+    result: list[PcleanParams] = []
     total_sub_nchan = 0
     for pidx in range(nparts):
         p = params.clone()
@@ -246,7 +246,7 @@ def _partition_cube_even(
     params: PcleanParams,
     nparts: int,
     nchan: int,
-) -> List[PcleanParams]:
+) -> list[PcleanParams]:
     """Simple even partition of channels across *nparts* workers.
 
     When ``start`` and ``width`` are both frequency strings we compute
@@ -271,7 +271,7 @@ def _partition_cube_even(
     chans_per_base = nchan // nparts
     remainder = nchan % nparts
 
-    result: List[PcleanParams] = []
+    result: list[PcleanParams] = []
     chan_offset = 0
     for i in range(nparts):
         nc = chans_per_base + (1 if i < remainder else 0)

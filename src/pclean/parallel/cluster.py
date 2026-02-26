@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -58,11 +57,11 @@ class DaskClusterManager:
 
     def __init__(
         self,
-        nworkers: Optional[int] = None,
-        scheduler_address: Optional[str] = None,
+        nworkers: int | None = None,
+        scheduler_address: str | None = None,
         threads_per_worker: int = 1,
-        memory_limit: str = "auto",
-        local_directory: Optional[str] = None,
+        memory_limit: str = 'auto',
+        local_directory: str | None = None,
     ):
         self.nworkers = nworkers or os.cpu_count() or 4
         self.scheduler_address = scheduler_address
@@ -71,7 +70,7 @@ class DaskClusterManager:
         self.local_directory = local_directory
 
         self._cluster = None
-        self._client: Optional[object] = None
+        self._client: object | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle

@@ -8,5 +8,5 @@ transparent Dask-based parallelism for cube (channel) and continuum
 
 from pclean.pclean import pclean  # noqa: F401
 
-__version__ = "0.1.0"
-__all__ = ["pclean"]
+__version__ = '0.1.0'
+__all__ = ['pclean']

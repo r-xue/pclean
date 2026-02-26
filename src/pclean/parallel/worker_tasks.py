@@ -17,7 +17,6 @@ Design rationale
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
 
 log = logging.getLogger(__name__)
 
