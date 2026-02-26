@@ -19,8 +19,7 @@ classifiers = [
 license-files = ["LICENSE"]
 requires-python = ">= 3.10"
 dependencies = [
-    "casatools",
-    "casatasks",
+    "casatools>=6.5",
     "dask[distributed]",
     "numpy",
 ]
@@ -58,13 +57,6 @@ python = "3.12.*"
 conda-ecosystem-user-package-isolation = "*"
 ipython = "*"
 pip = ">=23.0"
-# # Note: openmpi="*" is sufficient for non-gpu builds
-# openmpi-mpicxx = ">=5.0"
-# mpi4py = ">=3.1.5"
-# certifi = "*"
-# poppler = "*"
-# imagemagick = "*"
-# pandoc = "*"
 
 # Use tilde or caret requirements to allow bugfixes but prevent breaking changes
 numpy = "~=2.2.0"  # Utilizing NumPy 2.x performance improvements

@@ -98,7 +98,7 @@ pclean/
 ## Requirements
 
 * Python ≥ 3.10
-* `casatools`, `casatasks`
+* `casatools` (ver 6.5+)
 * `dask[distributed]`
 * `numpy`
 
