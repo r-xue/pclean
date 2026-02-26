@@ -56,6 +56,12 @@ _DEFAULT_IMG = dict(
     interpolation="linear",
     perchanweightdensity=True,
     startmodel="",
+    # These must be in impars so defineimage() creates the correct
+    # image products (e.g. .tt0/.tt1 for mtmfs).  Matches CASA's
+    # ImagerParameters.allimpars.
+    nterms=2,
+    deconvolver="hogbom",
+    restart=True,
 )
 
 _DEFAULT_GRID = dict(

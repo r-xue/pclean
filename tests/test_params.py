@@ -50,6 +50,23 @@ class TestPcleanParamsConstruction:
         assert p.weightpars['type'] == 'briggs'
         assert p.weightpars['robust'] == 0.0
 
+    def test_mtmfs_impars(self):
+        """nterms and deconvolver must flow into allimpars for defineimage()."""
+        p = PcleanParams(vis='a.ms', deconvolver='mtmfs', nterms=2)
+        assert p.allimpars['0']['deconvolver'] == 'mtmfs'
+        assert p.allimpars['0']['nterms'] == 2
+
+    def test_mtmfs_normpars(self):
+        """Normalizer must also get the correct nterms for mtmfs."""
+        p = PcleanParams(vis='a.ms', deconvolver='mtmfs', nterms=3)
+        assert p.allnormpars['0']['nterms'] == 3
+        assert p.allnormpars['0']['deconvolver'] == 'mtmfs'
+
+    def test_non_mtmfs_normpars_nterms(self):
+        """For non-mtmfs deconvolvers, normalizer nterms should be 1."""
+        p = PcleanParams(vis='a.ms', deconvolver='hogbom')
+        assert p.allnormpars['0']['nterms'] == 1
+
 
 class TestPcleanParamsSerialization:
     """Round-trip serialization via to_dict / from_dict."""
