@@ -80,6 +80,13 @@ class DaskClusterManager:
         """Start (or connect to) the Dask cluster and return *self*."""
         dd = _dd()
 
+        if self.threads_per_worker > 1:
+            log.warning(
+                "threads_per_worker=%d: casatools are NOT thread-safe; "
+                "use threads_per_worker=1 (default) for correctness",
+                self.threads_per_worker,
+            )
+
         if self.scheduler_address:
             log.info("Connecting to existing scheduler at %s",
                      self.scheduler_address)

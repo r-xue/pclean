@@ -230,18 +230,23 @@ class ParallelContinuumImager:
     # ------------------------------------------------------------------
 
     def _cleanup_partimages(self) -> None:
-        """Remove intermediate per-worker partial images."""
-        extensions = [
-            '.image', '.residual', '.psf', '.model', '.pb',
-            '.image.pbcor', '.mask', '.weight', '.sumwt',
-        ]
+        """Remove intermediate per-worker partial images.
+
+        Uses a glob on each partial-image prefix so that both
+        single-term (``.psf``) and multi-term (``.psf.tt0``,
+        ``.weight.tt2``, …) products are found and removed.
+        """
+        import glob
+
         removed = 0
         for pp in self._part_params:
             abs_name = os.path.abspath(pp.imagename)
-            for ext in extensions:
-                path = f'{abs_name}{ext}'
+            for path in glob.glob(f'{abs_name}.*'):
                 if os.path.isdir(path):
                     shutil.rmtree(path, ignore_errors=True)
+                    removed += 1
+                elif os.path.isfile(path):
+                    os.remove(path)
                     removed += 1
         if removed:
             log.info('Cleaned up %d partial-image artifacts', removed)
