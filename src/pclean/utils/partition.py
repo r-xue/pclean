@@ -107,13 +107,14 @@ def partition_continuum(
 
     result: List[PcleanParams] = []
     for part_idx in range(nparts):
-        # contdatapartition returns keys like '0.0', '0.1', ... for
-        # MS-0 partition-0, MS-0 partition-1, etc.
+        # contdatapartition returns a nested dict:
+        #   {"0": {"ms0": {selpars}, "ms1": ...}, "1": ...}
+        # outer key = partition index, inner keys = "ms0", "ms1", ...
+        part_key = str(part_idx)
         sub_sel: Dict[str, dict] = {}
         for ms_key in sorted(params.allselpars.keys()):
-            pkey = f"{ms_key}.{part_idx}"
-            if pkey in partselpars:
-                sub_sel[ms_key] = partselpars[pkey]
+            if part_key in partselpars and ms_key in partselpars[part_key]:
+                sub_sel[ms_key] = partselpars[part_key][ms_key]
             else:
                 # Fallback — use full selection for this MS
                 sub_sel[ms_key] = copy.deepcopy(params.allselpars[ms_key])
@@ -207,15 +208,20 @@ def _partition_cube_via_su(
     total_sub_nchan = 0
     for pidx in range(nparts):
         p = params.clone()
-        # Update selection / image params from synthesisutils output
-        for ms_key in sorted(params.allselpars.keys()):
-            pkey = f"{ms_key}.{pidx}"
-            if pkey in allpars:
-                p.allselpars[ms_key] = allpars[pkey]
-        imp_key = f"0.{pidx}"
-        if imp_key in allpars:
-            for k, v in allpars[imp_key].items():
-                p.allimpars["0"][k] = v
+        # cubedataimagepartition returns a nested dict:
+        #   {"0": {"ms0": {selpars}, "nchan": N, "coordsys": ...}, "1": ...}
+        # outer key = partition index, inner keys = "ms0", "ms1", ...
+        part_key = str(pidx)
+        if part_key in allpars:
+            part_rec = allpars[part_key]
+            for ms_key in sorted(params.allselpars.keys()):
+                if ms_key in part_rec:
+                    p.allselpars[ms_key] = part_rec[ms_key]
+            # Image params (nchan, coordsys) are at the partition level
+            for k, v in part_rec.items():
+                if k.startswith('ms'):
+                    continue  # already handled above
+                p.allimpars['0'][k] = v
         sub_nc = p.allimpars["0"].get("nchan", nchan)
         total_sub_nchan += sub_nc
         new_name = f"{params.imagename}.subcube.{pidx}"

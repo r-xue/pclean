@@ -97,15 +97,14 @@ class ParallelContinuumImager:
 
             # Major / minor loop
             if self.params.niter > 0:
-                self._deconvolver.setup_mask()
                 converged = self._check_convergence()
                 while not converged:
+                    self._deconvolver.setup_mask()
                     did = self._run_minor_cycle()
                     if did:
                         self._normalizer.pre_major_mfs()
                         self._parallel_major_cycle()
                         self._normalizer.post_major_mfs()
-                    self._deconvolver.setup_mask()
                     converged = self._check_convergence() or (not did)
 
                 if self.params.alldecpars["0"].get("restoration", True):

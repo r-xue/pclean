@@ -25,6 +25,9 @@ dependencies = [
     "numpy",
 ]
 keywords = ["astronomy", "pipeline", "ALMA", "VLA", "radio-astronomy"]
+authors = [
+    {name = "MiCASA", email = "rx.astro@gmail.com"},
+]
 
 [project.optional-dependencies]
 dev = [

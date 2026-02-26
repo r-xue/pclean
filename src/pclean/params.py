@@ -18,17 +18,26 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 # ---------------------------------------------------------------------------
 
 _DEFAULT_SEL = dict(
-    msname="",
-    field="",
-    spw="",
-    timerange="",
-    uvrange="",
-    antenna="",
-    scan="",
-    observation="",
-    intent="",
-    datacolumn="corrected",
+    msname='',
+    field='',
+    spw='',
+    timestr='',
+    uvdist='',
+    antenna='',
+    scan='',
+    obs='',
+    state='',
+    taql='',
+    datacolumn='corrected',
 )
+
+# Mapping from tclean user-facing parameter names to CASA internal names
+_SEL_KEY_ALIASES: dict[str, str] = {
+    'timerange': 'timestr',
+    'uvrange': 'uvdist',
+    'observation': 'obs',
+    'intent': 'state',
+}
 
 _DEFAULT_IMG = dict(
     imagename="",
@@ -200,15 +209,19 @@ class PcleanParams:
     def __init__(self, vis: Union[str, Sequence[str]] = "", **kwargs):
         vis = _ensure_list(vis) if vis else [""]
 
-        # ---- selection (one dict per MS) --------------------------------
+        # ---- selection (one dict per MS, keyed as 'ms0', 'ms1', ...) -----
         self.allselpars: Dict[str, dict] = {}
         for idx, msname in enumerate(vis):
-            key = str(idx)
+            key = f'ms{idx}'
             sel = dict(_DEFAULT_SEL)
-            sel["msname"] = msname
+            sel['msname'] = msname
             for k in _DEFAULT_SEL:
                 if k in kwargs:
                     sel[k] = kwargs[k]
+            # Also translate tclean user-facing aliases (e.g. timerange -> timestr)
+            for alias, internal in _SEL_KEY_ALIASES.items():
+                if alias in kwargs:
+                    sel[internal] = kwargs[alias]
             self.allselpars[key] = sel
 
         # ---- image definition (field 0) ---------------------------------

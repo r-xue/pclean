@@ -14,14 +14,14 @@ class TestPcleanParamsConstruction:
     def test_single_vis(self):
         p = PcleanParams(vis="test.ms", imagename="out", imsize=[256, 256])
         assert p.nms == 1
-        assert p.allselpars["0"]["msname"] == "test.ms"
-        assert p.imagename == "out"
+        assert p.allselpars['ms0']['msname'] == 'test.ms'
+        assert p.imagename == 'out'
 
     def test_multi_vis(self):
         p = PcleanParams(vis=["a.ms", "b.ms"])
         assert p.nms == 2
-        assert p.allselpars["0"]["msname"] == "a.ms"
-        assert p.allselpars["1"]["msname"] == "b.ms"
+        assert p.allselpars['ms0']['msname'] == 'a.ms'
+        assert p.allselpars['ms1']['msname'] == 'b.ms'
 
     def test_imsize_scalar(self):
         p = PcleanParams(vis="a.ms", imsize=512)
@@ -146,10 +146,10 @@ class TestRowChunkParams:
 
     def test_rowchunk_imagename(self):
         p = PcleanParams(vis="a.ms", imagename="cont")
-        sub_sel = {"0": {"msname": "a.ms", "taql": "ROWID() < 1000"}}
-        rp = p.make_rowchunk_params(sub_sel, "0")
-        assert "part.0" in rp.imagename
-        assert rp.allselpars["0"]["taql"] == "ROWID() < 1000"
+        sub_sel = {'ms0': {'msname': 'a.ms', 'taql': 'ROWID() < 1000'}}
+        rp = p.make_rowchunk_params(sub_sel, '0')
+        assert 'part.0' in rp.imagename
+        assert rp.allselpars['ms0']['taql'] == 'ROWID() < 1000'
 
 
 class TestCubeChunksize:
