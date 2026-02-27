@@ -111,7 +111,7 @@ def main(argv=None):
     # Normalise CLI names to Python names
     kwargs['scheduler_address'] = kwargs.pop('scheduler_address', None)
     kwargs['threads_per_worker'] = kwargs.pop('threads_per_worker', 1)
-    kwargs['memory_limit'] = kwargs.pop('memory_limit', 'auto')
+    kwargs['memory_limit'] = kwargs.pop('memory_limit', '0')
     kwargs['local_directory'] = kwargs.pop('local_directory', None)
 
     vis = kwargs.pop('vis')

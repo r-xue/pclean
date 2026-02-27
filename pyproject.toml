@@ -20,7 +20,8 @@ license-files = ["LICENSE"]
 requires-python = ">= 3.10"
 dependencies = [
     "casatools>=6.5",
-    "dask[distributed]",
+    "dask",
+    "distributed",
     "numpy",
 ]
 keywords = ["astronomy", "pipeline", "ALMA", "VLA", "radio-astronomy"]

@@ -160,7 +160,7 @@ _DEFAULT_PARALLEL = dict(
     nworkers=None,           # None → auto-detect
     scheduler_address=None,  # connect to existing cluster
     threads_per_worker=1,
-    memory_limit="auto",
+    memory_limit="0",
     local_directory=None,
     cube_chunksize=-1,       # -1 → nparts=nworkers; 1 → per-channel; N → N ch/task
     keep_subcubes=False,     # preserve subcube artifacts after concatenation

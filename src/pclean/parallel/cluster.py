@@ -51,7 +51,13 @@ class DaskClusterManager:
         Threads per Dask worker (default 1 — CASA tools are not
         thread-safe).
     memory_limit : str
-        Per-worker memory limit (``"auto"`` or e.g. ``"8GiB"``).
+        Per-worker memory limit.  Default ``"0"`` disables Dask's
+        memory management, which is correct for CASA workloads
+        because all heavy allocations happen inside C++ casatools
+        (reported as "unmanaged memory").  Dask cannot free this
+        memory, so its pause/spill heuristics only cause workers
+        to stall.  Concurrency is bounded by ``as_completed``
+        instead.
     local_directory : str or None
         Scratch directory for Dask spill-to-disk.
     """
@@ -61,7 +67,7 @@ class DaskClusterManager:
         nworkers: int | None = None,
         scheduler_address: str | None = None,
         threads_per_worker: int = 1,
-        memory_limit: str = 'auto',
+        memory_limit: str = '0',
         local_directory: str | None = None,
     ):
         self.nworkers = nworkers or os.cpu_count() or 4
@@ -109,8 +115,10 @@ class DaskClusterManager:
         # number than nworkers due to a startup race condition.
         self._client.wait_for_workers(self.nworkers, timeout=QUEUE_WAIT)
 
-        # Verify the cluster actually created the requested workers
-        actual = len(self._cluster.workers)
+        # Verify the cluster actually created the requested workers.
+        # Use nthreads() for a fresh, synchronous query to the scheduler
+        # (scheduler_info() can return a stale cached snapshot).
+        actual = len(self._client.nthreads())
         if actual != self.nworkers:
             log.warning(
                 "Requested %d workers but LocalCluster only created %d "
@@ -160,11 +168,15 @@ class DaskClusterManager:
     def worker_count(self) -> int:
         """Number of workers currently registered with the scheduler.
 
+        Uses ``client.nthreads()`` which is a direct synchronous query
+        to the scheduler, avoiding stale cached snapshots from
+        ``scheduler_info()``.
+
         Note that this can be less than the requested nworkers due to
         resource constraints or startup issues. The cluster manager will log
         a warning and adjust nworkers accordingly.
         """
-        return len(self.client.scheduler_info()["workers"])
+        return len(self.client.nthreads())
 
     # ------------------------------------------------------------------
     # Context-manager protocol

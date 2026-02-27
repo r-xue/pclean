@@ -134,7 +134,7 @@ def pclean(
     nworkers: int | None = None,
     scheduler_address: str | None = None,
     threads_per_worker: int = 1,
-    memory_limit: str = "auto",
+    memory_limit: str = "0",
     local_directory: str | None = None,
     cube_chunksize: int = -1,
     keep_subcubes: bool = False,
@@ -150,7 +150,8 @@ def pclean(
     * **nworkers** — number of Dask workers (default: CPU count).
     * **scheduler_address** — connect to an existing Dask scheduler.
     * **threads_per_worker** — threads per Dask worker (default 1).
-    * **memory_limit** — per-worker memory cap.
+    * **memory_limit** — per-worker memory cap (``"0"`` disables;
+      see ``docs/memory_management.md``).
     * **local_directory** — Dask scratch directory.
     * **cube_chunksize** — channels per sub-cube task for cube parallelism.
       ``-1`` (default) sets ``nparts = nworkers``;
@@ -253,7 +254,7 @@ def _run_parallel_cube(params: PcleanParams) -> dict:
         nworkers=pp.get("nworkers"),
         scheduler_address=pp.get("scheduler_address"),
         threads_per_worker=pp.get("threads_per_worker", 1),
-        memory_limit=pp.get("memory_limit", "auto"),
+        memory_limit=pp.get("memory_limit", "0"),
         local_directory=pp.get("local_directory"),
     ) as cluster:
         engine = ParallelCubeImager(params, cluster)
@@ -272,7 +273,7 @@ def _run_parallel_continuum(params: PcleanParams) -> dict:
         nworkers=pp.get("nworkers"),
         scheduler_address=pp.get("scheduler_address"),
         threads_per_worker=pp.get("threads_per_worker", 1),
-        memory_limit=pp.get("memory_limit", "auto"),
+        memory_limit=pp.get("memory_limit", "0"),
         local_directory=pp.get("local_directory"),
     ) as cluster:
         engine = ParallelContinuumImager(params, cluster)
