@@ -1,5 +1,8 @@
 # pclean — Parallel CLEAN Imaging with Dask
 
+[![tests](https://img.shields.io/github/actions/workflow/status/r-xue/pclean/test.yml?branch=main&logo=github&label=tests)](https://github.com/r-xue/pclean/actions/workflows/test.yml)
+[![codecov](https://img.shields.io/codecov/c/github/r-xue/pclean?logo=codecov)](https://codecov.io/gh/r-xue/pclean)
+
 `pclean` is a modular, Dask-accelerated radio-interferometric imaging package
 that wraps CASA's synthesis imaging C++ tools (`casatools`) to provide
 transparent parallelism for both **cube** and **continuum** imaging.
