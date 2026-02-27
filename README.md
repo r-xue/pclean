@@ -66,7 +66,7 @@ In addition to all standard `tclean` parameters, `pclean` accepts:
 | `nworkers` | `None` | Number of Dask workers (`None` → CPU count). |
 | `scheduler_address` | `None` | Connect to an existing Dask scheduler instead of creating a local cluster. |
 | `threads_per_worker` | `1` | Threads per Dask worker (CASA tools are not thread-safe). |
-| `memory_limit` | `'auto'` | Per-worker memory cap. |
+| `memory_limit` | `'0'` | Per-worker memory cap (`'0'` disables Dask memory management to avoid pausing/killing workers during CASA C++ allocations). |
 | `local_directory` | `None` | Dask scratch directory for spill-to-disk. |
 | `cube_chunksize` | `-1` | Channels per sub-cube task. `-1` → one sub-cube per worker; `1` → one per channel. |
 | `keep_subcubes` | `False` | Preserve intermediate sub-cube images after cube concatenation. |
@@ -92,14 +92,29 @@ pclean/
 │   │   └── worker_tasks.py        # Serialisable functions for workers
 │   └── utils/
 │       ├── partition.py           # Data / image partitioning helpers
-│       └── image_concat.py        # Sub-cube image concatenation
+│       ├── image_concat.py        # Sub-cube image concatenation
+│       └── memory_estimate.py     # Worker RAM estimation heuristics
 ```
+
+## Documentation
+
+Design notes and technical references are maintained in [`docs/`](docs/):
+
+| Document | Description |
+|----------|-------------|
+| [parallelization.md](docs/parallelization.md) | Cube vs. continuum parallelization architecture and diagrams |
+| [memory_estimation.md](docs/memory_estimation.md) | RAM estimation heuristics for worker sizing |
+| [memory_management.md](docs/memory_management.md) | Why Dask memory management is disabled (`memory_limit='0'`) |
+| [briggsbwtaper.md](docs/briggsbwtaper.md) | `briggsbwtaper` weighting analysis and parallel-mode fix |
+| [per_channel_convergence.md](docs/per_channel_convergence.md) | Per-channel convergence strategy |
+| [image_concatenation.md](docs/image_concatenation.md) | Sub-cube concatenation details |
+| [code_structure.md](docs/code_structure.md) | Module-level code overview |
 
 ## Requirements
 
 * Python ≥ 3.10
-* `casatools` (ver 6.5+)
-* `dask[distributed]`
+* `casatools` ≥ 6.5
+* `dask` + `distributed`
 * `numpy`
 
 ## License

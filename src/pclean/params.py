@@ -167,6 +167,8 @@ _DEFAULT_PARALLEL = dict(
     keep_partimages=False,   # preserve partial images after continuum gather
 )
 
+_ALLOW_BRIGGS_BW_TAPER = True
+
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -259,6 +261,22 @@ class PcleanParams:
         if weighting == "briggsbwtaper":
             wp["type"] = "briggs"
             wp["rmode"] = "bwtaper"
+            if _ALLOW_BRIGGS_BW_TAPER:
+                # Pre-compute fractional bandwidth from full cube so each
+                # parallel sub-cube worker can apply the correct taper even
+                # when it images only a single channel (fracBW=0 fallback).
+                from pclean.utils.partition import _parse_freq_hz
+                start_hz = _parse_freq_hz(kwargs.get("start", ""))
+                width_hz = _parse_freq_hz(kwargs.get("width", ""))
+                nchan_full = kwargs.get("nchan", -1)
+                if start_hz is not None and width_hz is not None and nchan_full > 1:
+                    min_freq = start_hz
+                    max_freq = start_hz + (nchan_full - 1) * abs(width_hz)
+                    if min_freq > max_freq:
+                        min_freq, max_freq = max_freq, min_freq
+                    wp["fracbw"] = 2.0 * (max_freq - min_freq) / (max_freq + min_freq)
+            else:
+                wp.pop("fracbw", None)  # ensure fracbw is not set if bwtaper is disabled
         elif weighting == "briggsabs":
             wp["type"] = "briggs"
             wp["rmode"] = "abs"
