@@ -57,12 +57,19 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E4",
-    "E7",
-    "E9", # pycodestyle errors
-    "F",  # pyflakes
-    "D",  # pydocstyle
-    "I",  # isort
+    "E4",  # pycodestyle imports — flags bad import grouping (e.g., multiple imports on one line)
+    "E7",  # pycodestyle statements — flags bad syntax patterns (e.g., `== None` instead of `is None`)
+    "E9",  # pycodestyle runtime errors — flags severe syntax and indentation errors
+    "W",   # pycodestyle warnings (trailing whitespace, etc.)
+    "F",   # pyflakes
+    "D",   # pydocstyle
+    "I",   # isort
+    "UP",  # pyupgrade — enforces modern Python syntax (PEP 604/585)
+    "B",   # flake8-bugbear — common bugs & design issues
+    "SIM", # flake8-simplify — simplifiable if/return patterns
+    "C4",  # flake8-comprehensions — unnecessary list()/dict() wrappers
+    "LOG", # flake8-logging — lazy logging format checks
+    "RUF", # ruff-specific rules (unused noqa, mutable defaults, etc.)
 ]
 preview = true
 
@@ -139,11 +146,14 @@ casatasks = "*"
 [tool.pixi.feature.dev.dependencies]
 pytest = ">=7"
 pytest-cov = ">=4"
+ruff = ">=0.11"
 
 [tool.pixi.feature.dev.tasks]
 test = "pytest tests/ -v"
 test-cov = "pytest tests/ -v --cov=pclean --cov-report=term-missing"
-lint = "python -m py_compile src/pclean/pclean.py"
+lint = "ruff check src tests"
+fmt = "ruff format src tests"
+fmt-check = "ruff format src tests --check"
 
 [tool.pixi.environments]
 default = { features = ["casa"], solve-group = "default" }

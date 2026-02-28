@@ -20,7 +20,7 @@ You are an expert Python developer assisting with code refactoring, documentatio
     * Preserve the intent of existing comments but improve their grammar/clarity.
 
 ## 2. Documentation Rules (Docstrings)
-* **Format:** Follow **Google Style** docstrings (PEP 257 compatible).
+* **Format:** Follow **Google Style** docstrings (PEP-257 compatible).
 * **No Redundant Types:** Do **NOT** include type information in the `Args` or `Returns` text descriptions. Rely on the function signature annotations.
 * **Language:** Keep existing notes/warnings close to the original meaning but correct any grammar or awkward phrasing.
 
