@@ -55,6 +55,13 @@ working/
 s5_0.VLASS*
 oussid.*
 
+# CASA measurement sets
+*.ms/
+*.ms.split/
+*.ms.split.cal/
+*.ms.split.cal.contsub/
+
+
 # OS
 .DS_Store
 Thumbs.db

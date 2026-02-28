@@ -9,12 +9,29 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TARGET_COLUMNS = ('DATA', 'CORRECTED_DATA', 'MODEL_DATA', 'FLAG', 'WEIGHT', 'SIGMA')
 
 
+def _normalize_adios2_size(value: str) -> str:
+    """Normalise a human-friendly size string to ADIOS2's expected format.
+
+    ADIOS2 accepts ``Kb``, ``Mb``, ``Gb``, ``Tb`` (note lowercase ``b``).
+    Common variants like ``2GB``, ``512mb``, ``4gb`` are rewritten here.
+    """
+    import re
+
+    m = re.fullmatch(r'(\d+)\s*([KMGT])(?:i?[Bb])?', value.strip(), re.IGNORECASE)
+    if m:
+        return f'{m.group(1)}{m.group(2).upper()}b'
+    return value  # pass through as-is (may be a plain byte count)
+
+
 def convert_ms_to_adios2(
     input_ms: str,
     output_ms: str,
     *,
     target_columns: tuple[str, ...] | list[str] = _DEFAULT_TARGET_COLUMNS,
     overwrite: bool = False,
+    engine_type: str = 'BP4',
+    engine_params: dict[str, str] | None = None,
+    adios2_xml: str | None = None,
 ) -> str:
     """Copy a MeasurementSet, rebinding heavy columns to Adios2StMan.
 
@@ -27,11 +44,44 @@ def convert_ms_to_adios2(
     left on their default storage managers because their I/O footprint is
     negligible.
 
+    Note:
+        Adios2StMan requires the copy to happen in a single
+        ``Table::deepCopy`` pass.  Manual row-level approaches
+        (``addrows`` + ``putcol``, or ``copyrows``) are not supported
+        because the ADIOS2 engine needs cell shapes established through
+        casacore's internal copy path and does not allow reopening a
+        table for append.
+
+        Casacore's C++ ``deepCopy`` streams data row-by-row, but the
+        ADIOS2 BP engine accumulates all ``Put()`` data within a single
+        step — ``EndStep()`` / ``Close()`` run only in the Adios2StMan
+        destructor.  Use *engine_params* to control buffer sizing.
+
+        The default ADIOS2 engine (usually BP5) **ignores**
+        ``MaxBufferSize``; it only honours ``BufferChunkSize``.  This
+        function defaults to ``BP4`` and passes the engine type via the
+        ``ENGINETYPE`` dminfo SPEC field so casacore's
+        ``Adios2StMan::makeObject`` sets the correct engine before
+        opening.
+
     Args:
         input_ms: Path to the source MeasurementSet.
         output_ms: Destination path for the ADIOS2-backed copy.
         target_columns: Column names to rebind to Adios2StMan.
         overwrite: If ``True``, remove *output_ms* if it already exists.
+        engine_type: ADIOS2 engine type.  ``'BP4'`` is recommended
+            because BP4 respects ``MaxBufferSize`` and flushes to disk
+            when the buffer exceeds that cap.  BP5 uses a different
+            allocation model (see ``BufferChunkSize``).
+        engine_params: ADIOS2 engine parameters.  Useful keys:
+
+            * ``MaxBufferSize`` — triggers flush when exceeded
+              (BP4 only, e.g. ``'2Gb'``).
+            * ``InitialBufferSize`` — starting allocation (BP4).
+            * ``BufferGrowthFactor`` — growth multiplier (BP4).
+            * ``BufferChunkSize`` — per-chunk size (BP5).
+        adios2_xml: Path to a user-supplied ADIOS2 XML config file.
+            If provided, *engine_type* and *engine_params* are ignored.
 
     Returns:
         The *output_ms* path on success.
@@ -95,14 +145,51 @@ def convert_ms_to_adios2(
     max_key = max(int(k.strip('*')) for k in dminfo) if dminfo else 0
     new_key = f'*{max_key + 1}'
     # Single manager entry: Adios2StMan allows only one instance per table.
-    dminfo[new_key] = {
+    adios2_spec: dict = {
         'NAME': 'Adios2StMan',
         'TYPE': 'Adios2StMan',
         'COLUMNS': adios2_cols,  # all target columns consolidated here
     }
+
+    # Configure engine type and params via the SPEC record fields that
+    # casacore's Adios2StMan::makeObject reads (ENGINETYPE / ENGINEPARAMS).
+    # This avoids generating an XML file (which triggered a stoul crash
+    # in some ADIOS2 builds) and ensures BP4 is used instead of BP5
+    # (BP5 ignores MaxBufferSize).
+    spec: dict[str, str | dict[str, str]] = {}
+    if adios2_xml:
+        # User-supplied XML: pass it directly — engine_type/engine_params ignored.
+        spec['XMLFILE'] = adios2_xml
+        logger.info('Using user-supplied ADIOS2 XML config: %s', adios2_xml)
+    else:
+        spec['ENGINETYPE'] = engine_type
+        merged_params = dict(engine_params or {})
+        # Normalise size strings so ADIOS2's parser doesn't choke on
+        # common variants like '2GB' (it expects '2Gb').
+        for size_key in ('MaxBufferSize', 'InitialBufferSize', 'BufferChunkSize'):
+            if size_key in merged_params:
+                merged_params[size_key] = _normalize_adios2_size(merged_params[size_key])
+        if merged_params:
+            spec['ENGINEPARAMS'] = merged_params
+            logger.info('Adios2StMan engine: %s, params: %s', engine_type, merged_params)
+        else:
+            logger.info('Adios2StMan engine: %s (default params)', engine_type)
+
+    adios2_spec['SPEC'] = spec
+    dminfo[new_key] = adios2_spec
     logger.info('Created single Adios2StMan manager for columns: %s', adios2_cols)
 
-    logger.info('Copying %s -> %s (valuecopy, this may take a while)...', input_ms, output_ms)
+    # Adios2StMan requires a single-pass deepCopy — manual row-level
+    # approaches (addrows+putcol, copyrows) abort because:
+    #   - addrows leaves variable-shape cells with null metadata
+    #     (ADIOS2 SetShape null-pointer SIGABRT)
+    #   - copyrows reopens the table internally; ADIOS2 rejects the
+    #     open mode for append ("Engine open mode not valid")
+    # Casacore's C++ deepCopy streams data row-by-row so it does not
+    # load the full table into Python; peak memory is from ADIOS2's
+    # internal write buffers.
+    nrow = tb.nrows()
+    logger.info('Copying %s -> %s (%d rows, valuecopy, this may take a while)...', input_ms, output_ms, nrow)
     tb.copy(newtablename=output_ms, deep=True, valuecopy=True, dminfo=dminfo)
     tb.close()
 
@@ -131,11 +218,33 @@ if __name__ == '__main__':
         default=list(_DEFAULT_TARGET_COLUMNS),
         help='Columns to rebind (default: %(default)s)',
     )
+    parser.add_argument(
+        '--engine-type',
+        default='BP4',
+        help='ADIOS2 engine type (default: %(default)s). BP4 respects MaxBufferSize.',
+    )
+    parser.add_argument(
+        '--max-buffer-size',
+        default=None,
+        help='ADIOS2 MaxBufferSize engine param, triggers flush when exceeded (BP4 only, e.g. 2Gb)',
+    )
+    parser.add_argument(
+        '--adios2-xml',
+        default=None,
+        help='Path to a user-supplied ADIOS2 XML config file (overrides --engine-type and --max-buffer-size)',
+    )
     args = parser.parse_args()
+
+    ep: dict[str, str] | None = None
+    if args.max_buffer_size:
+        ep = {'MaxBufferSize': _normalize_adios2_size(args.max_buffer_size)}
 
     convert_ms_to_adios2(
         args.input_ms,
         args.output_ms,
         target_columns=args.columns,
         overwrite=args.overwrite,
+        engine_type=args.engine_type,
+        engine_params=ep,
+        adios2_xml=args.adios2_xml,
     )
