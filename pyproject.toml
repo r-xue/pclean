@@ -71,6 +71,10 @@ select = [
     "LOG", # flake8-logging — lazy logging format checks
     "RUF", # ruff-specific rules (unused noqa, mutable defaults, etc.)
 ]
+ignore = [
+    "D102", # Missing docstring in public method
+    "D107", # Missing docstring in __init__
+]
 preview = true
 
 [tool.ruff.lint.pycodestyle]
