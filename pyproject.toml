@@ -39,6 +39,73 @@ dev = [
 where = ["src"]
 
 # ---------------------------------------------------------------------------
+# Ruff configuration
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9", # pycodestyle errors
+    "F",  # pyflakes
+    "D",  # pydocstyle
+    "I",  # isort
+]
+preview = true
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 140
+max-line-length = 120
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+preview = true
+exclude = ["*.pyi"]
+docstring-code-format = true
+docstring-code-line-length = 140
+quote-style = "single"
+skip-magic-trailing-comma = false
+
+# ---------------------------------------------------------------------------
+# Coverage configuration
+# ---------------------------------------------------------------------------
+
+[tool.coverage.run]
+omit = ['tests/*']
+branch = true             # Same as --cov-branch
+source = ['pclean']       # Same as --cov=pipeline
+
+[tool.coverage.report]
+fail_under = 60 # Set the minimum coverage percentage required
+precision = 2 # Add decimal precision
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    'pragma: no cover',
+    'if TYPE_CHECKING:',
+    'if __name__ == "__main__":',
+
+    'raise NotImplementedError',
+    'pass',
+    '@(abc\\.)?abstractmethod',
+]
+
+# ---------------------------------------------------------------------------
 # Pixi configuration
 # ---------------------------------------------------------------------------
 
