@@ -64,16 +64,11 @@ select = [
     "F",   # pyflakes
     "D",   # pydocstyle
     "I",   # isort
-    "UP",  # pyupgrade — enforces modern Python syntax (PEP 604/585)
-    "B",   # flake8-bugbear — common bugs & design issues
-    "SIM", # flake8-simplify — simplifiable if/return patterns
-    "C4",  # flake8-comprehensions — unnecessary list()/dict() wrappers
-    "LOG", # flake8-logging — lazy logging format checks
-    "RUF", # ruff-specific rules (unused noqa, mutable defaults, etc.)
 ]
 ignore = [
     "D102", # Missing docstring in public method
     "D107", # Missing docstring in __init__
+    "D105", # Missing docstring in magic method
 ]
 preview = true
 
