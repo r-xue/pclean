@@ -36,14 +36,17 @@ class TestSerialImager:
         with patch.dict('sys.modules', {'casatools': mock_casatools}):
             # Reset the lazy cache
             import pclean.imaging.serial_imager as mod
+
             mod._casatools = None
 
             from pclean.imaging.serial_imager import SerialImager
             from pclean.params import PcleanParams
 
             params = PcleanParams(
-                vis='test.ms', imagename='test_img',
-                niter=100, specmode='mfs',
+                vis='test.ms',
+                imagename='test_img',
+                niter=100,
+                specmode='mfs',
             )
             imager = SerialImager(params)
             imager.setup()
@@ -57,14 +60,17 @@ class TestSerialImager:
     def test_run_completes(self, mock_casatools):
         with patch.dict('sys.modules', {'casatools': mock_casatools}):
             import pclean.imaging.serial_imager as mod
+
             mod._casatools = None
 
             from pclean.imaging.serial_imager import SerialImager
             from pclean.params import PcleanParams
 
             params = PcleanParams(
-                vis='test.ms', imagename='test_run',
-                niter=100, specmode='mfs',
+                vis='test.ms',
+                imagename='test_run',
+                niter=100,
+                specmode='mfs',
             )
             result = SerialImager(params).run()
             assert 'imagename' in result
@@ -77,11 +83,16 @@ class TestDispatch:
     def test_serial_dispatch(self, mock_casatools):
         with patch.dict('sys.modules', {'casatools': mock_casatools}):
             import pclean.imaging.serial_imager as mod
+
             mod._casatools = None
 
             from pclean.pclean import pclean as pclean_fn
+
             result = pclean_fn(
-                vis='test.ms', imagename='serial_test',
-                niter=0, specmode='mfs', parallel=False,
+                vis='test.ms',
+                imagename='serial_test',
+                niter=0,
+                specmode='mfs',
+                parallel=False,
             )
             assert result['imagename'] == 'serial_test'

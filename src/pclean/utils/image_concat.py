@@ -19,6 +19,7 @@ def _ct():
     global _casatools
     if _casatools is None:
         import casatools as ct
+
         _casatools = ct
     return _casatools
 
@@ -80,8 +81,15 @@ def concat_subcubes(
     """
     if extensions is None:
         extensions = [
-            '.image', '.residual', '.psf', '.model', '.pb',
-            '.image.pbcor', '.mask', '.weight', '.sumwt',
+            '.image',
+            '.residual',
+            '.psf',
+            '.model',
+            '.pb',
+            '.image.pbcor',
+            '.mask',
+            '.weight',
+            '.sumwt',
         ]
 
     for ext in extensions:

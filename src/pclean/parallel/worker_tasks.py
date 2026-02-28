@@ -53,8 +53,15 @@ def _flush_table_cache(imagename: str) -> None:
 
         # Release lock files for all image products of this subcube.
         _EXTENSIONS = (
-            '.psf', '.residual', '.model', '.image', '.pb',
-            '.sumwt', '.weight', '.mask', '.image.pbcor',
+            '.psf',
+            '.residual',
+            '.model',
+            '.image',
+            '.pb',
+            '.sumwt',
+            '.weight',
+            '.mask',
+            '.image.pbcor',
         )
         for ext in _EXTENSIONS:
             img_path = imagename + ext
@@ -70,7 +77,8 @@ def _flush_table_cache(imagename: str) -> None:
         if cached:
             log.debug(
                 'Table cache has %d entries after subcube task (%s …)',
-                len(cached), cached[0] if cached else '',
+                len(cached),
+                cached[0] if cached else '',
             )
 
         tb.done()

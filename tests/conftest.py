@@ -12,6 +12,7 @@ def _reset_casatools_cache():
     import pclean.imaging.serial_imager as si_mod
     import pclean.imaging.deconvolver as dc_mod
     import pclean.imaging.normalizer as nm_mod
+
     yield
     si_mod._casatools = None
     dc_mod._casatools = None

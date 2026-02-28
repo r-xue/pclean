@@ -97,8 +97,7 @@ class TestSubcubeParams:
 
     def test_subcube(self):
         p = PcleanParams(vis='a.ms', imagename='full', nchan=128)
-        sub = p.make_subcube_params(start=32, nchan=32,
-                                     image_suffix='1')
+        sub = p.make_subcube_params(start=32, nchan=32, image_suffix='1')
         assert sub.allimpars['0']['nchan'] == 32
         assert sub.allimpars['0']['start'] == '32'
         assert 'subcube.1' in sub.imagename
@@ -106,8 +105,7 @@ class TestSubcubeParams:
     def test_subcube_freq_start(self):
         """make_subcube_params preserves frequency strings as start."""
         p = PcleanParams(vis='a.ms', imagename='full', nchan=128)
-        sub = p.make_subcube_params(start='214.45GHz', nchan=24,
-                                     image_suffix='0')
+        sub = p.make_subcube_params(start='214.45GHz', nchan=24, image_suffix='0')
         assert sub.allimpars['0']['nchan'] == 24
         assert sub.allimpars['0']['start'] == '214.45GHz'
 
@@ -126,9 +124,14 @@ class TestFreqPartition:
 
     def test_freq_partition_splits_channels(self):
         from pclean.utils.partition import _partition_cube_even
+
         p = PcleanParams(
-            vis='a.ms', imagename='cube', specmode='cube',
-            nchan=117, start='214.4501854310GHz', width='15.6245970MHz',
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=117,
+            start='214.4501854310GHz',
+            width='15.6245970MHz',
         )
         subs = _partition_cube_even(p, nparts=5, nchan=117)
         assert len(subs) == 5
@@ -147,15 +150,18 @@ class TestFreqPartition:
     def test_channel_partition_fallback(self):
         """When start is a channel index, fallback to channel-based split."""
         from pclean.utils.partition import _partition_cube_even
+
         p = PcleanParams(
-            vis='a.ms', imagename='cube', specmode='cube',
-            nchan=100, start=0, width=1,
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=100,
+            start=0,
+            width=1,
         )
         subs = _partition_cube_even(p, nparts=4, nchan=100)
         assert len(subs) == 4
-        assert all(
-            'GHz' not in s.allimpars['0']['start'] for s in subs
-        )
+        assert all('GHz' not in s.allimpars['0']['start'] for s in subs)
 
 
 class TestRowChunkParams:
@@ -195,10 +201,14 @@ class TestCubeChunksize:
             worker_count = 5
 
         p = PcleanParams(
-            vis='a.ms', specmode='cube', nchan=117,
-            parallel=True, cube_chunksize=1,
+            vis='a.ms',
+            specmode='cube',
+            nchan=117,
+            parallel=True,
+            cube_chunksize=1,
         )
         from pclean.parallel.cube_parallel import ParallelCubeImager
+
         engine = ParallelCubeImager(p, FakeCluster())
         # chunksize=1 → 117 tasks (one per channel)
         assert engine._compute_nparts(5) == 117
@@ -211,10 +221,14 @@ class TestCubeChunksize:
             worker_count = 5
 
         p = PcleanParams(
-            vis='a.ms', specmode='cube', nchan=117,
-            parallel=True, cube_chunksize=-1,
+            vis='a.ms',
+            specmode='cube',
+            nchan=117,
+            parallel=True,
+            cube_chunksize=-1,
         )
         from pclean.parallel.cube_parallel import ParallelCubeImager
+
         engine = ParallelCubeImager(p, FakeCluster())
         assert engine._compute_nparts(5) == 5
 
@@ -227,10 +241,14 @@ class TestCubeChunksize:
             worker_count = 5
 
         p = PcleanParams(
-            vis='a.ms', specmode='cube', nchan=117,
-            parallel=True, cube_chunksize=10,
+            vis='a.ms',
+            specmode='cube',
+            nchan=117,
+            parallel=True,
+            cube_chunksize=10,
         )
         from pclean.parallel.cube_parallel import ParallelCubeImager
+
         engine = ParallelCubeImager(p, FakeCluster())
         assert engine._compute_nparts(5) == math.ceil(117 / 10)
 
@@ -279,6 +297,7 @@ class TestKeepSubcubes:
     def test_cleanup_ignores_missing(self, tmp_path):
         """_cleanup_subcubes does not fail when artifacts don't exist."""
         from pclean.parallel.cube_parallel import ParallelCubeImager
+
         base = str(tmp_path / 'noimg')
         # Should not raise
         ParallelCubeImager._cleanup_subcubes(base, 4)

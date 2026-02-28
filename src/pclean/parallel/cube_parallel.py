@@ -56,8 +56,7 @@ class ParallelCubeImager:
         # 2. Partition channels
         self._subcube_params = partition_cube(self.params, nparts)
         nparts = len(self._subcube_params)  # may differ slightly due to rounding
-        log.info('Cube imaging: %d sub-cubes on %d workers',
-                 nparts, nworkers)
+        log.info('Cube imaging: %d sub-cubes on %d workers', nparts, nworkers)
 
         # 3. Submit sub-cubes with bounded concurrency.
         #    Using ``as_completed`` keeps at most *nworkers* tasks
@@ -74,9 +73,7 @@ class ParallelCubeImager:
         # Seed the initial batch (up to nworkers tasks).
         batch_end = min(nworkers, nparts)
         for i in range(batch_end):
-            f = client.submit(run_subcube,
-                              self._subcube_params[i].to_dict(),
-                              pure=False)
+            f = client.submit(run_subcube, self._subcube_params[i].to_dict(), pure=False)
             future_to_idx[f] = i
             pending.append(f)
 
@@ -89,9 +86,7 @@ class ParallelCubeImager:
 
             # Submit the next subcube (if any) to keep the pipeline full.
             if next_idx < nparts:
-                f = client.submit(run_subcube,
-                                  self._subcube_params[next_idx].to_dict(),
-                                  pure=False)
+                f = client.submit(run_subcube, self._subcube_params[next_idx].to_dict(), pure=False)
                 future_to_idx[f] = next_idx
                 ac.add(f)
                 next_idx += 1
@@ -119,8 +114,15 @@ class ParallelCubeImager:
     def _cleanup_subcubes(abs_imgname: str, nparts: int) -> None:
         """Remove intermediate subcube images and per-worker temp dirs."""
         extensions = [
-            '.image', '.residual', '.psf', '.model', '.pb',
-            '.image.pbcor', '.mask', '.weight', '.sumwt',
+            '.image',
+            '.residual',
+            '.psf',
+            '.model',
+            '.pb',
+            '.image.pbcor',
+            '.mask',
+            '.weight',
+            '.sumwt',
         ]
         removed = 0
         for i in range(nparts):
@@ -155,5 +157,6 @@ class ParallelCubeImager:
             nchan = 1
 
         import math
+
         nparts = math.ceil(nchan / chunksize)
         return max(nparts, 1)

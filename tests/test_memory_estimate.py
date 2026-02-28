@@ -1,6 +1,7 @@
 """
 Tests for pclean.utils.memory_estimate — RAM heuristic helpers.
 """
+
 import math
 import pytest
 from pclean.utils.memory_estimate import (
@@ -11,7 +12,7 @@ from pclean.utils.memory_estimate import (
     recommend_nworkers,
 )
 
-GIB = 1024 ** 3
+GIB = 1024**3
 
 
 class TestEstimateWorkerMemory:
@@ -24,7 +25,7 @@ class TestEstimateWorkerMemory:
         ~4.9 GiB C++ + 0.7 GiB overhead ≈ 5.2–5.6 GiB per worker.
         """
         mem = estimate_worker_memory_gib(imsize=8000, nchan_per_task=1)
-        assert 4.5 < mem < 6.5, f"Expected ~5.2 GiB, got {mem:.2f} GiB"
+        assert 4.5 < mem < 6.5, f'Expected ~5.2 GiB, got {mem:.2f} GiB'
 
     def test_square_imsize_scalar(self):
         """Scalar imsize treated as square."""
@@ -50,44 +51,34 @@ class TestEstimateWorkerMemory:
 
     def test_mosaic_larger_than_standard(self):
         """Mosaic gridder should use more memory than standard."""
-        mem_std = estimate_worker_memory_gib(imsize=4096, gridder="standard")
-        mem_mos = estimate_worker_memory_gib(imsize=4096, gridder="mosaic")
+        mem_std = estimate_worker_memory_gib(imsize=4096, gridder='standard')
+        mem_mos = estimate_worker_memory_gib(imsize=4096, gridder='mosaic')
         assert mem_mos > mem_std
 
     def test_mosaic_multifield_scaling(self):
         """More mosaic fields should increase memory."""
-        mem1 = estimate_worker_memory_gib(
-            imsize=4096, gridder="mosaic", nfields=1
-        )
-        mem50 = estimate_worker_memory_gib(
-            imsize=4096, gridder="mosaic", nfields=50
-        )
+        mem1 = estimate_worker_memory_gib(imsize=4096, gridder='mosaic', nfields=1)
+        mem50 = estimate_worker_memory_gib(imsize=4096, gridder='mosaic', nfields=50)
         assert mem50 > mem1
 
     def test_mtmfs_nterms_scaling(self):
         """MTMFS should scale as nterms^2."""
-        mem1 = estimate_worker_memory_gib(
-            imsize=4096, deconvolver="mtmfs", nterms=1
-        )
-        mem2 = estimate_worker_memory_gib(
-            imsize=4096, deconvolver="mtmfs", nterms=2
-        )
+        mem1 = estimate_worker_memory_gib(imsize=4096, deconvolver='mtmfs', nterms=1)
+        mem2 = estimate_worker_memory_gib(imsize=4096, deconvolver='mtmfs', nterms=2)
         image1 = mem1 - WORKER_BASE_OVERHEAD_GIB
         image2 = mem2 - WORKER_BASE_OVERHEAD_GIB
         assert image2 == pytest.approx(4.0 * image1, rel=1e-6)
 
     def test_mtmfs_nterms1_same_as_hogbom(self):
         """MTMFS with nterms=1 should match hogbom memory."""
-        mem_hog = estimate_worker_memory_gib(imsize=4096, deconvolver="hogbom")
-        mem_mt1 = estimate_worker_memory_gib(
-            imsize=4096, deconvolver="mtmfs", nterms=1
-        )
+        mem_hog = estimate_worker_memory_gib(imsize=4096, deconvolver='hogbom')
+        mem_mt1 = estimate_worker_memory_gib(imsize=4096, deconvolver='mtmfs', nterms=1)
         assert mem_mt1 == pytest.approx(mem_hog, rel=1e-6)
 
     def test_unknown_gridder_treated_as_standard(self):
         """Unknown gridder defaults to factor 1.0."""
-        mem_std = estimate_worker_memory_gib(imsize=4096, gridder="standard")
-        mem_unk = estimate_worker_memory_gib(imsize=4096, gridder="novelgrid")
+        mem_std = estimate_worker_memory_gib(imsize=4096, gridder='standard')
+        mem_unk = estimate_worker_memory_gib(imsize=4096, gridder='novelgrid')
         assert mem_unk == pytest.approx(mem_std, rel=1e-6)
 
     def test_small_image_dominated_by_overhead(self):
@@ -105,9 +96,7 @@ class TestEstimatePeakRam:
 
     def test_12_workers_irc10216(self):
         """12 workers x IRC+10216 ≈ 12 × 5.2 + 0.5 ≈ 63 GiB."""
-        total = estimate_peak_ram_gib(
-            nworkers=12, imsize=8000, nchan_per_task=1
-        )
+        total = estimate_peak_ram_gib(nworkers=12, imsize=8000, nchan_per_task=1)
         assert 50 < total < 80
 
     def test_single_worker(self):
@@ -150,10 +139,6 @@ class TestRecommendNworkers:
 
     def test_safety_factor(self):
         """Lower safety factor (less RAM usable per heuristic) → more conservative (fewer workers)."""
-        n_high = recommend_nworkers(
-            available_ram_gib=64.0, imsize=4096, ram_safety_factor=0.95
-        )
-        n_low = recommend_nworkers(
-            available_ram_gib=64.0, imsize=4096, ram_safety_factor=0.50
-        )
+        n_high = recommend_nworkers(available_ram_gib=64.0, imsize=4096, ram_safety_factor=0.95)
+        n_low = recommend_nworkers(available_ram_gib=64.0, imsize=4096, ram_safety_factor=0.50)
         assert n_low <= n_high

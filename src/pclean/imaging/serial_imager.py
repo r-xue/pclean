@@ -40,6 +40,7 @@ def _ct():
     global _casatools
     if _casatools is None:
         import casatools as ct  # type: ignore
+
         _casatools = ct
     return _casatools
 
@@ -64,10 +65,10 @@ class SerialImager:
         self._init_iter = init_iter_control
 
         # C++ tool handles (created in setup())
-        self.si_tool = None          # synthesisimager
-        self.sd_tools: dict = {}     # {field_id: synthesisdeconvolver}
-        self.sn_tools: dict = {}     # {field_id: synthesisnormalizer}
-        self.ib_tool = None          # iterbotsink
+        self.si_tool = None  # synthesisimager
+        self.sd_tools: dict = {}  # {field_id: synthesisdeconvolver}
+        self.sn_tools: dict = {}  # {field_id: synthesisnormalizer}
+        self.ib_tool = None  # iterbotsink
 
         self._major_count = 0
         self._converged = False
@@ -167,9 +168,7 @@ class SerialImager:
         iterbotrec = self.ib_tool.getminorcyclecontrols()
         did_work = False
         for fld in self.sd_tools:
-            exrec = self.sd_tools[fld].executeminorcycle(
-                iterbotrecord=iterbotrec
-            )
+            exrec = self.sd_tools[fld].executeminorcycle(iterbotrecord=iterbotrec)
             self.ib_tool.mergeexecrecord(exrec, int(fld))
             if exrec.get('iterdone', 0) > 0:
                 did_work = True
@@ -187,9 +186,7 @@ class SerialImager:
         for fld in self.sd_tools:
             initrec = self.sd_tools[fld].initminorcycle()
             self.ib_tool.mergeinitrecord(initrec, int(fld))
-        reached_major = (
-            nmajor_limit > 0 and self._major_count >= nmajor_limit
-        )
+        reached_major = nmajor_limit > 0 and self._major_count >= nmajor_limit
         flag = self.ib_tool.cleanComplete(reachedMajorLimit=reached_major)
         self._converged = flag
         return flag
@@ -302,8 +299,15 @@ class SerialImager:
     def _set_weighting(self) -> None:
         # Only pass keys accepted by setweighting()
         _WEIGHT_KEYS = {
-            'type', 'rmode', 'noise', 'robust', 'fieldofview',
-            'npixels', 'multifield', 'usecubebriggs', 'uvtaper',
+            'type',
+            'rmode',
+            'noise',
+            'robust',
+            'fieldofview',
+            'npixels',
+            'multifield',
+            'usecubebriggs',
+            'uvtaper',
         }
         wp = {k: v for k, v in self.params.weightpars.items() if k in _WEIGHT_KEYS}
         self.si_tool.setweighting(**wp)
@@ -345,8 +349,7 @@ class SerialImager:
                     shutil.rmtree(mask_dir)
                     log.debug('Removed stale mask subtable: %s', mask_dir)
                 except OSError:
-                    log.debug('Could not remove mask subtable: %s',
-                              mask_dir, exc_info=True)
+                    log.debug('Could not remove mask subtable: %s', mask_dir, exc_info=True)
 
     def _normalize_psf(self) -> None:
         for fld in self.sn_tools:

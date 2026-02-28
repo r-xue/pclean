@@ -22,10 +22,12 @@ log = logging.getLogger(__name__)
 _dask_distributed = None
 QUEUE_WAIT = 60
 
+
 def _dd():
     global _dask_distributed
     if _dask_distributed is None:
         import dask.distributed as dd  # type: ignore
+
         _dask_distributed = dd
     return _dask_distributed
 
@@ -87,8 +89,7 @@ class DaskClusterManager:
             )
 
         if self.scheduler_address:
-            log.info('Connecting to existing scheduler at %s',
-                     self.scheduler_address)
+            log.info('Connecting to existing scheduler at %s', self.scheduler_address)
             self._client = dd.Client(self.scheduler_address)
         else:
             log.info('Starting LocalCluster with %d workers', self.nworkers)
@@ -100,7 +101,6 @@ class DaskClusterManager:
                 local_directory=self.local_directory,
             )
             self._client = dd.Client(self._cluster)
-
 
         # Block until all requested workers have registered with the
         # scheduler.  Without this, worker_count can return a smaller
@@ -115,13 +115,13 @@ class DaskClusterManager:
             log.warning(
                 'Requested %d workers but LocalCluster only created %d '
                 '(system may lack resources). Adjusting nworkers.',
-                self.nworkers, actual,
+                self.nworkers,
+                actual,
             )
             self.nworkers = actual
 
-        log.info('Dask cluster ready: %d workers registered',
-                 self.worker_count)
-        
+        log.info('Dask cluster ready: %d workers registered', self.worker_count)
+
         log.info('Dask dashboard: %s', self._client.dashboard_link)
         log.info('   client:  %s', self._client)
         log.info('   cluster: %s', self._client.cluster)
@@ -130,9 +130,9 @@ class DaskClusterManager:
             return dask_worker.status, dask_worker.id
 
         status: dict[str, tuple[str, str]] = self._client.run(get_status)
-        
+
         if status:
-            log.info('worker status: \n %s', pformat(status))            
+            log.info('worker status: \n %s', pformat(status))
 
         return self
 

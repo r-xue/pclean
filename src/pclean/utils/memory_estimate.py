@@ -148,22 +148,17 @@ def estimate_worker_memory_gib(
         # Empirical: CF tables grow roughly as sqrt(nfields) beyond
         # the base mosaic overhead.
         import math
+
         gfactor *= 1.0 + 0.1 * (math.sqrt(nfields) - 1.0)
 
     # MTMFS multiplier: internal Hessian products scale as nterms^2
     # relative to a single-term deconvolver.
     deconv_factor = 1.0
     if deconvolver.lower() == 'mtmfs' and nterms > 1:
-        deconv_factor = nterms ** 2
+        deconv_factor = nterms**2
 
-    image_bytes = (
-        npix
-        * nchan_per_task
-        * BYTES_PER_PIXEL_STANDARD
-        * gfactor
-        * deconv_factor
-    )
-    image_gib = image_bytes / (1024 ** 3)
+    image_bytes = npix * nchan_per_task * BYTES_PER_PIXEL_STANDARD * gfactor * deconv_factor
+    image_gib = image_bytes / (1024**3)
 
     # --- Total per-worker ---
     total_gib = WORKER_BASE_OVERHEAD_GIB + image_gib
@@ -235,10 +230,11 @@ def recommend_nworkers(
     if available_ram_gib is None:
         try:
             import psutil
-            available_ram_gib = psutil.virtual_memory().total / (1024 ** 3)
+
+            available_ram_gib = psutil.virtual_memory().total / (1024**3)
         except ImportError:
             mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
-            available_ram_gib = mem_bytes / (1024 ** 3)
+            available_ram_gib = mem_bytes / (1024**3)
 
     usable_ram = available_ram_gib * ram_safety_factor
 

@@ -34,6 +34,7 @@ def _ct():
     global _casatools
     if _casatools is None:
         import casatools as ct
+
         _casatools = ct
     return _casatools
 
@@ -120,8 +121,7 @@ class ParallelContinuumImager:
     def _partition_data(self) -> None:
         nworkers = self.cluster.nworkers
         self._part_params = partition_continuum(self.params, nworkers)
-        log.info('Continuum imaging: %d row-chunks on %d workers',
-                 len(self._part_params), nworkers)
+        log.info('Continuum imaging: %d row-chunks on %d workers', len(self._part_params), nworkers)
 
     def _create_actors(self) -> None:
         """Create persistent ``_WorkerGridder`` actors on each worker."""
@@ -129,7 +129,9 @@ class ParallelContinuumImager:
         self._actors = []
         for pp in self._part_params:
             actor_future = client.submit(
-                _WorkerGridder, pp.to_dict(), actor=True,
+                _WorkerGridder,
+                pp.to_dict(),
+                actor=True,
             )
             self._actors.append(actor_future.result())  # blocks until ready
 

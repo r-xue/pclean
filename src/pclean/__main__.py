@@ -2,8 +2,8 @@
 
 Usage::
 
-    python -m pclean --vis my.ms --imagename out --specmode cube \\
-        --imsize 512 512 --cell 1arcsec --niter 1000 \\
+    python -m pclean --vis my.ms --imagename out --specmode cube \
+        --imsize 512 512 --cell 1arcsec --niter 1000 \
         --parallel --nworkers 8
 
 All tclean parameters are supported as ``--<name> <value>`` flags.
@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -74,8 +73,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument('--pbmask', type=float, default=0.0)
     # Restoration
     p.add_argument('--restoration', action='store_true', default=True)
-    p.add_argument('--no-restoration', dest='restoration',
-                   action='store_false')
+    p.add_argument('--no-restoration', dest='restoration', action='store_false')
     p.add_argument('--pbcor', action='store_true', default=False)
     # Misc
     p.add_argument('--savemodel', default='none')
@@ -89,12 +87,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument('--memory-limit', default='auto')
     p.add_argument('--local-directory', default=None)
     # Logging
-    p.add_argument('--log-level', default='INFO',
-                   choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'])
+    p.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'])
     return p
 
 
 def main(argv=None):
+    """Parse CLI arguments, configure logging, and run pclean.
+
+    Args:
+        argv: Command-line arguments to parse. Defaults to ``sys.argv[1:]``
+            when *None*.
+    """
     parser = _build_parser()
     args = parser.parse_args(argv)
 

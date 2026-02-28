@@ -19,6 +19,7 @@ def _ct():
     global _casatools
     if _casatools is None:
         import casatools as ct
+
         _casatools = ct
     return _casatools
 

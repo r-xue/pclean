@@ -23,6 +23,7 @@ def _ct():
     global _casatools
     if _casatools is None:
         import casatools as ct
+
         _casatools = ct
     return _casatools
 
@@ -92,7 +93,8 @@ def partition_continuum(
 
     try:
         partselpars = su.contdatapartition(
-            selpars=params.allselpars, npart=nparts,
+            selpars=params.allselpars,
+            npart=nparts,
         )
     finally:
         su.done()
@@ -147,8 +149,7 @@ def partition_cube(
     try:
         return _partition_cube_via_su(params, nparts, nchan)
     except Exception as exc:
-        log.debug('synthesisutils cube partition failed (%s); '
-                   'using even-split fallback', exc)
+        log.debug('synthesisutils cube partition failed (%s); using even-split fallback', exc)
 
     return _partition_cube_even(params, nparts, nchan)
 
@@ -172,8 +173,7 @@ def _partition_cube_via_su(
     csys = params.allimpars['0'].get('csys', {})
     if not csys:
         raise RuntimeError(
-            'No coordinate system (csys) available in impars; '
-            'cannot use synthesisutils for cube partitioning'
+            'No coordinate system (csys) available in impars; cannot use synthesisutils for cube partitioning'
         )
 
     ct = _ct()
@@ -271,14 +271,12 @@ def _partition_cube_even(
             # Channel-index fallback
             sub_start = str(chan_offset)
 
-        log.info('  subcube %d: start=%s  nchan=%d  (chan_offset=%d)',
-                 i, sub_start, nc, chan_offset)
+        log.info('  subcube %d: start=%s  nchan=%d  (chan_offset=%d)', i, sub_start, nc, chan_offset)
         sub = params.make_subcube_params(sub_start, nc, str(i))
         result.append(sub)
         chan_offset += nc
 
-    log.info('Even-split cube partition: %d sub-cubes, total_chan=%d',
-             len(result), chan_offset)
+    log.info('Even-split cube partition: %d sub-cubes, total_chan=%d', len(result), chan_offset)
     return result
 
 
