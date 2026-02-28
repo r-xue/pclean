@@ -142,6 +142,10 @@ dask-jobqueue = ">=0.9.0" # Highly recommended if running on HPC clusters
 casatools = "*"
 casatasks = "*"
 
+[tool.pixi.feature.casa-forge.dependencies]
+casatools = "*"
+casatasks = "*"
+
 [tool.pixi.feature.dev.dependencies]
 pytest = ">=7"
 pytest-cov = ">=4"
@@ -156,5 +160,6 @@ fmt-check = "ruff format src tests --check"
 
 [tool.pixi.environments]
 default = { features = ["casa"], solve-group = "default" }
+default-forge = { features = ["casa-forge"], solve-group = "forge" }
 dev = { features = ["casa", "dev"], solve-group = "default" }
 test = { features = ["dev"], solve-group = "default" }

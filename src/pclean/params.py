@@ -155,14 +155,14 @@ _DEFAULT_MISC = dict(
 
 _DEFAULT_PARALLEL = dict(
     parallel=False,
-    nworkers=None,  # None -> auto-detect
-    scheduler_address=None,  # connect to existing cluster
+    nworkers=None,  # auto-detect from available CPU cores
+    scheduler_address=None,  # if set, connect to an existing Dask cluster
     threads_per_worker=1,
-    memory_limit='0',
-    local_directory=None,
-    cube_chunksize=-1,  # -1 -> nparts=nworkers; 1 -> per-channel; N -> N ch/task
-    keep_subcubes=False,  # preserve subcube artifacts after concatenation
-    keep_partimages=False,  # preserve partial images after continuum gather
+    memory_limit='0',  # '0' disables Dask's per-worker memory limit
+    local_directory=None,  # scratch directory for spilling; defaults to system tmpdir
+    cube_chunksize=-1,  # -1: nparts=nworkers, 1: one channel per task, N: N channels per task
+    keep_subcubes=False,  # retain per-worker subcube images after concatenation
+    keep_partimages=False,  # retain partial images after continuum gather
 )
 
 _ALLOW_BRIGGS_BW_TAPER = True
