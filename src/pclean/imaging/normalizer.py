@@ -1,5 +1,4 @@
-"""
-Image normalizer wrapper.
+"""Image normalizer wrapper.
 
 Provides a standalone ``Normalizer`` class that handles the
 gather / scatter / divide-by-weight operations required for
@@ -24,20 +23,16 @@ def _ct():
 
 
 class Normalizer:
-    """
-    Wrapper around ``synthesisnormalizer``.
+    """Wrapper around ``synthesisnormalizer``.
 
     In parallel continuum mode the normalizer gathers partial images
     produced by different workers, divides by weight, and scatters
     the model back.
 
-    Parameters
-    ----------
-    normpars : dict
-        Parameters for ``setupnormalizer`` (imagename, pblimit, …).
-    partimagenames : list[str], optional
-        Paths to the partial (per-worker) images.  When set, the
-        normalizer will register them for gather/scatter operations.
+    Args:
+        normpars: Parameters for ``setupnormalizer`` (imagename, pblimit, ...).
+        partimagenames: Paths to the partial (per-worker) images.  When set, the
+            normalizer will register them for gather/scatter operations.
     """
 
     def __init__(
@@ -54,7 +49,7 @@ class Normalizer:
         self._sn = ct.synthesisnormalizer()
         pars = dict(self.normpars)
         if self.partimagenames:
-            pars["partimagenames"] = self.partimagenames
+            pars['partimagenames'] = self.partimagenames
         self._sn.setupnormalizer(normpars=pars)
 
     def teardown(self) -> None:
@@ -96,7 +91,7 @@ class Normalizer:
         try:
             self._sn.normalizeprimarybeam()
         except Exception:
-            log.debug("normalizeprimarybeam not available; skipping.")
+            log.debug('normalizeprimarybeam not available; skipping.')
 
     # -- Weight density ------------------------------------------------
 

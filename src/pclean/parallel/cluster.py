@@ -1,7 +1,7 @@
-"""
-Dask cluster lifecycle management.
+"""Dask cluster lifecycle management.
 
 Supports:
+
 * Starting a ``LocalCluster`` (default)
 * Connecting to an existing ``distributed.Client`` via scheduler address
 * Graceful shutdown with image cleanup
@@ -36,30 +36,22 @@ def _dd():
 
 
 class DaskClusterManager:
-    """
-    Thin wrapper that owns a ``dask.distributed.Client``.
+    """Thin wrapper that owns a ``dask.distributed.Client``.
 
-    Parameters
-    ----------
-    nworkers : int or None
-        Number of workers for a ``LocalCluster``.  ``None`` →
-        ``os.cpu_count()``.
-    scheduler_address : str or None
-        If given, connect to an existing scheduler instead of
-        creating a ``LocalCluster``.
-    threads_per_worker : int
-        Threads per Dask worker (default 1 — CASA tools are not
-        thread-safe).
-    memory_limit : str
-        Per-worker memory limit.  Default ``"0"`` disables Dask's
-        memory management, which is correct for CASA workloads
-        because all heavy allocations happen inside C++ casatools
-        (reported as "unmanaged memory").  Dask cannot free this
-        memory, so its pause/spill heuristics only cause workers
-        to stall.  Concurrency is bounded by ``as_completed``
-        instead.
-    local_directory : str or None
-        Scratch directory for Dask spill-to-disk.
+    Args:
+        nworkers: Number of workers for a ``LocalCluster``.  ``None`` ->
+            ``os.cpu_count()``.
+        scheduler_address: If given, connect to an existing scheduler instead of
+            creating a ``LocalCluster``.
+        threads_per_worker: Threads per Dask worker (default 1 -- CASA tools are
+            not thread-safe).
+        memory_limit: Per-worker memory limit.  Default ``'0'`` disables Dask's
+            memory management, which is correct for CASA workloads because all
+            heavy allocations happen inside C++ casatools (reported as
+            "unmanaged memory").  Dask cannot free this memory, so its
+            pause/spill heuristics only cause workers to stall.  Concurrency is
+            bounded by ``as_completed`` instead.
+        local_directory: Scratch directory for Dask spill-to-disk.
     """
 
     def __init__(
@@ -83,23 +75,23 @@ class DaskClusterManager:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def start(self) -> "DaskClusterManager":
+    def start(self) -> 'DaskClusterManager':
         """Start (or connect to) the Dask cluster and return *self*."""
         dd = _dd()
 
         if self.threads_per_worker > 1:
             log.warning(
-                "threads_per_worker=%d: casatools are NOT thread-safe; "
-                "use threads_per_worker=1 (default) for correctness",
+                'threads_per_worker=%d: casatools are NOT thread-safe; '
+                'use threads_per_worker=1 (default) for correctness',
                 self.threads_per_worker,
             )
 
         if self.scheduler_address:
-            log.info("Connecting to existing scheduler at %s",
+            log.info('Connecting to existing scheduler at %s',
                      self.scheduler_address)
             self._client = dd.Client(self.scheduler_address)
         else:
-            log.info("Starting LocalCluster with %d workers", self.nworkers)
+            log.info('Starting LocalCluster with %d workers', self.nworkers)
             self._cluster = dd.LocalCluster(
                 n_workers=self.nworkers,
                 processes=True,
@@ -121,16 +113,16 @@ class DaskClusterManager:
         actual = len(self._client.nthreads())
         if actual != self.nworkers:
             log.warning(
-                "Requested %d workers but LocalCluster only created %d "
-                "(system may lack resources). Adjusting nworkers.",
+                'Requested %d workers but LocalCluster only created %d '
+                '(system may lack resources). Adjusting nworkers.',
                 self.nworkers, actual,
             )
             self.nworkers = actual
 
-        log.info("Dask cluster ready: %d workers registered",
+        log.info('Dask cluster ready: %d workers registered',
                  self.worker_count)
         
-        log.info("Dask dashboard: %s", self._client.dashboard_link)
+        log.info('Dask dashboard: %s', self._client.dashboard_link)
         log.info('   client:  %s', self._client)
         log.info('   cluster: %s', self._client.cluster)
 
@@ -161,7 +153,7 @@ class DaskClusterManager:
     def client(self):
         """Return the ``dask.distributed.Client``."""
         if self._client is None:
-            raise RuntimeError("Cluster not started — call .start() first")
+            raise RuntimeError('Cluster not started — call .start() first')
         return self._client
 
     @property

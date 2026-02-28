@@ -1,5 +1,4 @@
-"""
-Image concatenation utilities.
+"""Image concatenation utilities.
 
 After parallel cube imaging each worker produces a sub-cube.  This
 module concatenates them into the final output cube, mirroring the
@@ -37,24 +36,16 @@ def concat_images(
     overwrite: bool = True,
     virtual: bool = True,
 ) -> None:
-    """
-    Concatenate a list of CASA images along *axis*.
+    """Concatenate a list of CASA images along *axis*.
 
-    Parameters
-    ----------
-    outimage : str
-        Path for the output concatenated image.
-    inimages : list[str]
-        Ordered list of input sub-images.
-    axis : int
-        Axis to concatenate along (default -1 → spectral).
-    relax : bool
-        Relax axis checks.
-    overwrite : bool
-        Overwrite *outimage* if it exists.
-    virtual : bool
-        If ``True`` create a virtual (reference) concatenation, which
-        is fast but references the originals.
+    Args:
+        outimage: Path for the output concatenated image.
+        inimages: Ordered list of input sub-images.
+        axis: Axis to concatenate along (default -1 -> spectral).
+        relax: Relax axis checks.
+        overwrite: Overwrite *outimage* if it exists.
+        virtual: If ``True`` create a virtual (reference) concatenation,
+            which is fast but references the originals.
     """
     ct = _ct()
     ia = ct.image()
@@ -70,7 +61,7 @@ def concat_images(
         )
     finally:
         ia.done()
-    log.info("Concatenated %d images → %s", len(inimages), outimage)
+    log.info('Concatenated %d images → %s', len(inimages), outimage)
 
 
 def concat_subcubes(
@@ -78,35 +69,31 @@ def concat_subcubes(
     nparts: int,
     extensions: list[str] | None = None,
 ) -> None:
-    """
-    Concatenate all standard image products (.image, .residual, .psf, …)
-    from numbered sub-cubes into the final output.
+    """Concatenate all standard image products from numbered sub-cubes.
 
-    Parameters
-    ----------
-    base_imagename : str
-        The original ``imagename`` (without ``.subcube.N``).
-    nparts : int
-        Number of sub-cubes.
-    extensions : list[str], optional
-        Image extensions to concatenate.  Defaults to a standard set.
+    Products include ``.image``, ``.residual``, ``.psf``, etc.
+
+    Args:
+        base_imagename: The original ``imagename`` (without ``.subcube.N``).
+        nparts: Number of sub-cubes.
+        extensions: Image extensions to concatenate.  Defaults to a standard set.
     """
     if extensions is None:
         extensions = [
-            ".image", ".residual", ".psf", ".model", ".pb",
-            ".image.pbcor", ".mask", ".weight", ".sumwt",
+            '.image', '.residual', '.psf', '.model', '.pb',
+            '.image.pbcor', '.mask', '.weight', '.sumwt',
         ]
 
     for ext in extensions:
         infiles = []
         for i in range(nparts):
-            subname = f"{base_imagename}.subcube.{i}{ext}"
+            subname = f'{base_imagename}.subcube.{i}{ext}'
             if os.path.isdir(subname) or os.path.isfile(subname):
                 infiles.append(subname)
         if not infiles:
             continue
-        outfile = f"{base_imagename}{ext}"
+        outfile = f'{base_imagename}{ext}'
         try:
             concat_images(outfile, infiles)
         except Exception as exc:
-            log.warning("Failed to concatenate %s: %s", ext, exc)
+            log.warning('Failed to concatenate %s: %s', ext, exc)

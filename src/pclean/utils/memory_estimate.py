@@ -78,7 +78,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Sequence
+from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 
@@ -94,51 +94,42 @@ WORKER_BASE_OVERHEAD_GIB: float = 0.7
 
 #: Gridder multipliers relative to ``standard``.
 _GRIDDER_FACTOR: dict[str, float] = {
-    "standard": 1.0,
-    "wproject": 1.2,
-    "widefield": 1.3,
-    "mosaic": 2.0,
-    "awproject": 2.5,
+    'standard': 1.0,
+    'wproject': 1.2,
+    'widefield': 1.3,
+    'mosaic': 2.0,
+    'awproject': 2.5,
 }
 
 
 def estimate_worker_memory_gib(
     imsize: Sequence[int] | int,
     nchan_per_task: int = 1,
-    gridder: str = "standard",
-    deconvolver: str = "hogbom",
+    gridder: str = 'standard',
+    deconvolver: str = 'hogbom',
     nterms: int = 1,
     nfields: int = 1,
 ) -> float:
     """Estimate peak RAM (GiB) consumed by a single worker.
 
-    Parameters
-    ----------
-    imsize : int or sequence of int
-        Image dimensions in pixels.  A scalar is treated as a square.
-    nchan_per_task : int
-        Number of channels each worker images (``cube_chunksize``).
-    gridder : str
-        Gridder name (``standard``, ``mosaic``, ``wproject``, etc.).
-    deconvolver : str
-        Deconvolver name.  ``mtmfs`` triggers the *nterms* multiplier.
-    nterms : int
-        Number of Taylor terms (only relevant for ``mtmfs``).
-    nfields : int
-        Number of mosaic pointings (used to scale mosaic overhead).
+    Args:
+        imsize: Image dimensions in pixels.  A scalar is treated as a square.
+        nchan_per_task: Number of channels each worker images (``cube_chunksize``).
+        gridder: Gridder name (``standard``, ``mosaic``, ``wproject``, etc.).
+        deconvolver: Deconvolver name.  ``mtmfs`` triggers the *nterms* multiplier.
+        nterms: Number of Taylor terms (only relevant for ``mtmfs``).
+        nfields: Number of mosaic pointings (used to scale mosaic overhead).
 
-    Returns
-    -------
-    float
+    Returns:
         Estimated peak memory in GiB.
 
-    Examples
-    --------
-    >>> estimate_worker_memory_gib(imsize=8000, nchan_per_task=1)
-    5.22...
-    >>> estimate_worker_memory_gib(imsize=[1280, 1024], gridder='mosaic',
-    ...                            deconvolver='mtmfs', nterms=2)
-    5.08...
+    Examples::
+
+        >>> estimate_worker_memory_gib(imsize=8000, nchan_per_task=1)
+        5.22...
+        >>> estimate_worker_memory_gib(imsize=[1280, 1024], gridder='mosaic',
+        ...                            deconvolver='mtmfs', nterms=2)
+        5.08...
     """
     if isinstance(imsize, (int, float)):
         nx = ny = int(imsize)
@@ -153,7 +144,7 @@ def estimate_worker_memory_gib(
     gfactor = _GRIDDER_FACTOR.get(gridder_key, 1.0)
 
     # Mosaic CF memory also scales (sub-linearly) with field count.
-    if gridder_key == "mosaic" and nfields > 1:
+    if gridder_key == 'mosaic' and nfields > 1:
         # Empirical: CF tables grow roughly as sqrt(nfields) beyond
         # the base mosaic overhead.
         import math
@@ -162,7 +153,7 @@ def estimate_worker_memory_gib(
     # MTMFS multiplier: internal Hessian products scale as nterms^2
     # relative to a single-term deconvolver.
     deconv_factor = 1.0
-    if deconvolver.lower() == "mtmfs" and nterms > 1:
+    if deconvolver.lower() == 'mtmfs' and nterms > 1:
         deconv_factor = nterms ** 2
 
     image_bytes = (
@@ -183,23 +174,23 @@ def estimate_peak_ram_gib(
     nworkers: int,
     imsize: Sequence[int] | int,
     nchan_per_task: int = 1,
-    gridder: str = "standard",
-    deconvolver: str = "hogbom",
+    gridder: str = 'standard',
+    deconvolver: str = 'hogbom',
     nterms: int = 1,
     nfields: int = 1,
 ) -> float:
     """Estimate peak system RAM (GiB) for *nworkers* concurrent tasks.
 
-    Parameters
-    ----------
-    nworkers : int
-        Number of concurrent Dask workers.
-    imsize, nchan_per_task, gridder, deconvolver, nterms, nfields
-        Forwarded to :func:`estimate_worker_memory_gib`.
+    Args:
+        nworkers: Number of concurrent Dask workers.
+        imsize: Forwarded to :func:`estimate_worker_memory_gib`.
+        nchan_per_task: Forwarded to :func:`estimate_worker_memory_gib`.
+        gridder: Forwarded to :func:`estimate_worker_memory_gib`.
+        deconvolver: Forwarded to :func:`estimate_worker_memory_gib`.
+        nterms: Forwarded to :func:`estimate_worker_memory_gib`.
+        nfields: Forwarded to :func:`estimate_worker_memory_gib`.
 
-    Returns
-    -------
-    float
+    Returns:
         Estimated total peak RAM in GiB.
     """
     per_worker = estimate_worker_memory_gib(
@@ -220,26 +211,25 @@ def recommend_nworkers(
     available_ram_gib: float | None = None,
     imsize: Sequence[int] | int = 4096,
     nchan_per_task: int = 1,
-    gridder: str = "standard",
-    deconvolver: str = "hogbom",
+    gridder: str = 'standard',
+    deconvolver: str = 'hogbom',
     nterms: int = 1,
     nfields: int = 1,
     ram_safety_factor: float = 0.85,
 ) -> int:
     """Suggest the maximum number of workers that fit in available RAM.
 
-    Parameters
-    ----------
-    available_ram_gib : float or None
-        Total system RAM in GiB.  ``None`` reads from the OS.
-    imsize, nchan_per_task, gridder, deconvolver, nterms, nfields
-        Forwarded to :func:`estimate_worker_memory_gib`.
-    ram_safety_factor : float
-        Fraction of available RAM to target (default 0.85 = 85%).
+    Args:
+        available_ram_gib: Total system RAM in GiB.  ``None`` reads from the OS.
+        imsize: Forwarded to :func:`estimate_worker_memory_gib`.
+        nchan_per_task: Forwarded to :func:`estimate_worker_memory_gib`.
+        gridder: Forwarded to :func:`estimate_worker_memory_gib`.
+        deconvolver: Forwarded to :func:`estimate_worker_memory_gib`.
+        nterms: Forwarded to :func:`estimate_worker_memory_gib`.
+        nfields: Forwarded to :func:`estimate_worker_memory_gib`.
+        ram_safety_factor: Fraction of available RAM to target (default 0.85 = 85%).
 
-    Returns
-    -------
-    int
+    Returns:
         Recommended number of workers (at least 1).
     """
     if available_ram_gib is None:
@@ -247,7 +237,7 @@ def recommend_nworkers(
             import psutil
             available_ram_gib = psutil.virtual_memory().total / (1024 ** 3)
         except ImportError:
-            mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+            mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
             available_ram_gib = mem_bytes / (1024 ** 3)
 
     usable_ram = available_ram_gib * ram_safety_factor
@@ -268,8 +258,8 @@ def recommend_nworkers(
     n = max(1, int(budget / per_worker))
 
     log.info(
-        "Memory estimate: %.1f GiB/worker, %.1f GiB usable → %d workers "
-        "(imsize=%s, gridder=%s, deconvolver=%s, nterms=%d)",
+        'Memory estimate: %.1f GiB/worker, %.1f GiB usable → %d workers '
+        '(imsize=%s, gridder=%s, deconvolver=%s, nterms=%d)',
         per_worker,
         usable_ram,
         n,

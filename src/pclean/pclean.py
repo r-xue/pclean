@@ -1,27 +1,25 @@
-"""
-``pclean`` — tclean-compatible interface with Dask parallelism.
+"""``pclean`` -- tclean-compatible interface with Dask parallelism.
 
 This is the primary user-facing module.  The ``pclean()`` function
 accepts the same parameters as CASA ``tclean`` (plus a handful of
 Dask-specific extras) and dispatches to the appropriate engine:
 
-* ``parallel=False``  → ``SerialImager``
-* ``parallel=True, specmode='cube'``  → ``ParallelCubeImager``
-* ``parallel=True, specmode='mfs'``   → ``ParallelContinuumImager``
+* ``parallel=False``  -> ``SerialImager``
+* ``parallel=True, specmode='cube'``  -> ``ParallelCubeImager``
+* ``parallel=True, specmode='mfs'``   -> ``ParallelContinuumImager``
 
-Examples
---------
->>> from pclean import pclean
->>> pclean(vis='my.ms', imagename='test', imsize=[512,512],
-...        cell='1arcsec', specmode='cube', niter=500,
-...        parallel=True, nworkers=8)
+Examples::
+
+    >>> from pclean import pclean
+    >>> pclean(vis='my.ms', imagename='test', imsize=[512, 512],
+    ...        cell='1arcsec', specmode='cube', niter=500,
+    ...        parallel=True, nworkers=8)
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any
 
 from pclean.params import PcleanParams
 
@@ -32,73 +30,73 @@ def pclean(
     # --- Data selection ------------------------------------------------
     vis: str | Sequence[str] = '',
     selectdata: bool = True,
-    field: str = "",
-    spw: str = "",
-    timerange: str = "",
-    uvrange: str = "",
-    antenna: str = "",
-    scan: str = "",
-    observation: str = "",
-    intent: str = "",
-    datacolumn: str = "corrected",
+    field: str = '',
+    spw: str = '',
+    timerange: str = '',
+    uvrange: str = '',
+    antenna: str = '',
+    scan: str = '',
+    observation: str = '',
+    intent: str = '',
+    datacolumn: str = 'corrected',
     # --- Image definition ---------------------------------------------
-    imagename: str = "",
-    imsize: Any = [100],
-    cell: Any = "1arcsec",
-    phasecenter: str = "",
-    stokes: str = "I",
-    projection: str = "SIN",
-    startmodel: str = "",
+    imagename: str = '',
+    imsize: list[int] | int = [100],
+    cell: list[str] | str = '1arcsec',
+    phasecenter: str = '',
+    stokes: str = 'I',
+    projection: str = 'SIN',
+    startmodel: str = '',
     # --- Spectral definition ------------------------------------------
-    specmode: str = "mfs",
-    reffreq: str = "",
+    specmode: str = 'mfs',
+    reffreq: str = '',
     nchan: int = -1,
-    start: str = "",
-    width: str = "",
-    outframe: str = "LSRK",
-    veltype: str = "radio",
-    restfreq: Any = [],
-    interpolation: str = "linear",
+    start: str = '',
+    width: str = '',
+    outframe: str = 'LSRK',
+    veltype: str = 'radio',
+    restfreq: list[str] | str = [],
+    interpolation: str = 'linear',
     perchanweightdensity: bool = True,
     # --- Gridding -----------------------------------------------------
-    gridder: str = "standard",
+    gridder: str = 'standard',
     facets: int = 1,
     wprojplanes: int = 1,
-    vptable: str = "",
+    vptable: str = '',
     mosweight: bool = True,
     aterm: bool = True,
     psterm: bool = False,
     wbawp: bool = True,
     conjbeams: bool = False,
-    cfcache: str = "",
+    cfcache: str = '',
     usepointing: bool = False,
     computepastep: float = 360.0,
     rotatepastep: float = 360.0,
-    pointingoffsetsigdev: Any = [],
+    pointingoffsetsigdev: list[float] = [],
     pblimit: float = 0.2,
-    normtype: str = "flatnoise",
-    psfphasecenter: str = "",
+    normtype: str = 'flatnoise',
+    psfphasecenter: str = '',
     # --- Deconvolution ------------------------------------------------
-    deconvolver: str = "hogbom",
-    scales: Any = [],
+    deconvolver: str = 'hogbom',
+    scales: list[int] = [],
     nterms: int = 2,
     smallscalebias: float = 0.0,
     fusedthreshold: float = 0.0,
     largestscale: int = -1,
     restoration: bool = True,
-    restoringbeam: Any = [],
+    restoringbeam: list[str] = [],
     pbcor: bool = False,
-    outlierfile: str = "",
+    outlierfile: str = '',
     # --- Weighting ----------------------------------------------------
-    weighting: str = "natural",
+    weighting: str = 'natural',
     robust: float = 0.5,
-    noise: str = "1.0Jy",
+    noise: str = '1.0Jy',
     npixels: int = 0,
-    uvtaper: Any = [],
+    uvtaper: list[str] = [],
     # --- Iteration control --------------------------------------------
     niter: int = 0,
     gain: float = 0.1,
-    threshold: str = "0.0mJy",
+    threshold: str = '0.0mJy',
     nsigma: float = 0.0,
     cycleniter: int = -1,
     cyclefactor: float = 1.0,
@@ -108,8 +106,8 @@ def pclean(
     nmajor: int = -1,
     fullsummary: bool = False,
     # --- Masking ------------------------------------------------------
-    usemask: str = "user",
-    mask: str = "",
+    usemask: str = 'user',
+    mask: str = '',
     pbmask: float = 0.0,
     sidelobethreshold: float = 3.0,
     noisethreshold: float = 5.0,
@@ -125,7 +123,7 @@ def pclean(
     fastnoise: bool = True,
     # --- Misc ---------------------------------------------------------
     restart: bool = True,
-    savemodel: str = "none",
+    savemodel: str = 'none',
     calcres: bool = True,
     calcpsf: bool = True,
     psfcutoff: float = 0.35,
@@ -134,40 +132,37 @@ def pclean(
     nworkers: int | None = None,
     scheduler_address: str | None = None,
     threads_per_worker: int = 1,
-    memory_limit: str = "0",
+    memory_limit: str = '0',
     local_directory: str | None = None,
     cube_chunksize: int = -1,
     keep_subcubes: bool = False,
     keep_partimages: bool = False,
 ) -> dict:
-    """
-    Parallel CLEAN imaging — tclean-compatible interface.
+    """Parallel CLEAN imaging -- tclean-compatible interface.
 
     Parameters are identical to CASA ``tclean`` with the following
     additions:
 
-    * **parallel** — enable Dask-distributed parallelism.
-    * **nworkers** — number of Dask workers (default: CPU count).
-    * **scheduler_address** — connect to an existing Dask scheduler.
-    * **threads_per_worker** — threads per Dask worker (default 1).
-    * **memory_limit** — per-worker memory cap (``"0"`` disables;
+    * **parallel** -- enable Dask-distributed parallelism.
+    * **nworkers** -- number of Dask workers (default: CPU count).
+    * **scheduler_address** -- connect to an existing Dask scheduler.
+    * **threads_per_worker** -- threads per Dask worker (default 1).
+    * **memory_limit** -- per-worker memory cap (``'0'`` disables;
       see ``docs/memory_management.md``).
-    * **local_directory** — Dask scratch directory.
-    * **cube_chunksize** — channels per sub-cube task for cube parallelism.
+    * **local_directory** -- Dask scratch directory.
+    * **cube_chunksize** -- channels per sub-cube task for cube parallelism.
       ``-1`` (default) sets ``nparts = nworkers``;
       ``1`` creates one task per channel (maximum load balancing);
       ``N`` groups N channels per task.
-    * **keep_subcubes** — if ``True``, preserve intermediate sub-cube
+    * **keep_subcubes** -- if ``True``, preserve intermediate sub-cube
       images and per-worker temp directories after concatenation.
       Useful for debugging or downstream per-channel analysis.
       Default ``False`` removes them to save disk space.
-    * **keep_partimages** — if ``True``, preserve partial images
+    * **keep_partimages** -- if ``True``, preserve partial images
       produced by each worker during continuum (MFS) imaging.
       Default ``False`` removes them after gathering.
 
-    Returns
-    -------
-    dict
+    Returns:
         Imaging summary (convergence, major-cycle count, image names).
     """
 
@@ -238,7 +233,7 @@ def pclean(
 
 def _run_serial(params: PcleanParams) -> dict:
     from pclean.imaging.serial_imager import SerialImager
-    log.info("Running serial imaging (specmode=%s)", params.specmode)
+    log.info('Running serial imaging (specmode=%s)', params.specmode)
     imager = SerialImager(params)
     return imager.run()
 
@@ -248,14 +243,14 @@ def _run_parallel_cube(params: PcleanParams) -> dict:
     from pclean.parallel.cube_parallel import ParallelCubeImager
 
     pp = params.parallelpars
-    log.info("Running parallel cube imaging (nworkers=%s)", pp.get("nworkers"))
+    log.info('Running parallel cube imaging (nworkers=%s)', pp.get('nworkers'))
 
     with DaskClusterManager(
-        nworkers=pp.get("nworkers"),
-        scheduler_address=pp.get("scheduler_address"),
-        threads_per_worker=pp.get("threads_per_worker", 1),
-        memory_limit=pp.get("memory_limit", "0"),
-        local_directory=pp.get("local_directory"),
+        nworkers=pp.get('nworkers'),
+        scheduler_address=pp.get('scheduler_address'),
+        threads_per_worker=pp.get('threads_per_worker', 1),
+        memory_limit=pp.get('memory_limit', '0'),
+        local_directory=pp.get('local_directory'),
     ) as cluster:
         engine = ParallelCubeImager(params, cluster)
         return engine.run()
@@ -266,15 +261,15 @@ def _run_parallel_continuum(params: PcleanParams) -> dict:
     from pclean.parallel.continuum_parallel import ParallelContinuumImager
 
     pp = params.parallelpars
-    log.info("Running parallel continuum imaging (nworkers=%s)",
-             pp.get("nworkers"))
+    log.info('Running parallel continuum imaging (nworkers=%s)',
+             pp.get('nworkers'))
 
     with DaskClusterManager(
-        nworkers=pp.get("nworkers"),
-        scheduler_address=pp.get("scheduler_address"),
-        threads_per_worker=pp.get("threads_per_worker", 1),
-        memory_limit=pp.get("memory_limit", "0"),
-        local_directory=pp.get("local_directory"),
+        nworkers=pp.get('nworkers'),
+        scheduler_address=pp.get('scheduler_address'),
+        threads_per_worker=pp.get('threads_per_worker', 1),
+        memory_limit=pp.get('memory_limit', '0'),
+        local_directory=pp.get('local_directory'),
     ) as cluster:
         engine = ParallelContinuumImager(params, cluster)
         return engine.run()

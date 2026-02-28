@@ -1,24 +1,23 @@
-"""
-Serial synthesis imager — the single-process imaging engine.
+"""Serial synthesis imager -- the single-process imaging engine.
 
 Wraps the four CASA synthesis C++ tools (``synthesisimager``,
 ``synthesisdeconvolver``, ``synthesisnormalizer``, ``iterbotsink``)
 into a clean Python lifecycle that can be driven standalone **or**
 by the Dask-parallel engines.
 
-Public API
-----------
-* ``SerialImager(params)``
-* ``.setup()``          — wires up all C++ tools
-* ``.make_psf()``       — compute PSF
-* ``.make_pb()``        — compute primary beam
-* ``.run_major_cycle()``— one major cycle (grid / degrid)
-* ``.run_minor_cycle()``— one round of deconvolution
-* ``.has_converged()``  — check convergence
-* ``.restore()``        — restore images
-* ``.pbcor()``          — PB-correct images
-* ``.teardown()``       — release tools
-* ``.run()``            — full end-to-end pipeline
+Public API::
+
+    SerialImager(params)
+    .setup()           -- wires up all C++ tools
+    .make_psf()        -- compute PSF
+    .make_pb()         -- compute primary beam
+    .run_major_cycle() -- one major cycle (grid / degrid)
+    .run_minor_cycle() -- one round of deconvolution
+    .has_converged()   -- check convergence
+    .restore()         -- restore images
+    .pbcor()           -- PB-correct images
+    .teardown()        -- release tools
+    .run()             -- full end-to-end pipeline
 """
 
 from __future__ import annotations
@@ -47,17 +46,13 @@ def _ct():
 
 # ======================================================================
 class SerialImager:
-    """
-    Single-process CLEAN imaging pipeline.
+    """Single-process CLEAN imaging pipeline.
 
-    Parameters
-    ----------
-    params : PcleanParams
-        Validated parameter set.
-    init_iter_control : bool
-        Whether to create an ``iterbotsink`` tool.  Set to ``False``
-        when this imager is driven externally (e.g. by a Dask
-        coordinator that manages convergence itself).
+    Args:
+        params: Validated parameter set.
+        init_iter_control: Whether to create an ``iterbotsink`` tool.  Set
+            to ``False`` when this imager is driven externally (e.g. by a
+            Dask coordinator that manages convergence itself).
     """
 
     def __init__(
@@ -112,30 +107,27 @@ class SerialImager:
 
     def make_psf(self) -> None:
         """Compute the PSF (and gather/normalize for MFS)."""
-        log.info("Computing PSF …")
+        log.info('Computing PSF …')
         self.si_tool.makepsf()
         self._normalize_psf()
 
     def make_pb(self) -> None:
         """Compute the primary beam."""
-        log.info("Computing PB …")
+        log.info('Computing PB …')
         try:
             self.si_tool.makepb()
         except Exception:
-            log.debug("makepb() not available or not applicable; skipping.")
+            log.debug('makepb() not available or not applicable; skipping.')
         self._normalize_pb()
 
     def run_major_cycle(self, is_first: bool = False) -> None:
-        """
-        Execute one major cycle.
+        """Execute one major cycle.
 
-        Parameters
-        ----------
-        is_first : bool
-            If ``True`` this is the initial residual computation
-            (model is zero).
+        Args:
+            is_first: If ``True`` this is the initial residual computation
+                (model is zero).
         """
-        log.info("Major cycle %d …", self._major_count)
+        log.info('Major cycle %d …', self._major_count)
         if self._is_mfs:
             self._pre_major_normalize()
 
@@ -148,13 +140,13 @@ class SerialImager:
         # can stay in the process-global table cache even after
         # SIImageStore::removeMask deletes it.  The subsequent
         # SetupNewTable for the same path then fails with
-        # "is already opened (is in the table cache)".
+        # 'is already opened (is in the table cache)'.
         # Removing the stale mask0 directory from disk lets
         # SetupNewTable succeed because the path no longer exists.
         if not is_first and self._major_count > 0:
             self._evict_residual_mask()
 
-        controls = {"lastcycle": last}
+        controls = {'lastcycle': last}
         self.si_tool.executemajorcycle(controls=controls)
         self._major_count += 1
 
@@ -165,13 +157,13 @@ class SerialImager:
             self._post_major_normalize()
 
     def run_minor_cycle(self) -> bool:
-        """
-        Execute one round of minor-cycle deconvolution on all fields.
+        """Execute one round of minor-cycle deconvolution on all fields.
 
-        Returns ``True`` if iterations were performed.
+        Returns:
+            ``True`` if iterations were performed.
         """
         if self.ib_tool is None:
-            raise RuntimeError("No iterbotsink — cannot run minor cycle")
+            raise RuntimeError('No iterbotsink — cannot run minor cycle')
         iterbotrec = self.ib_tool.getminorcyclecontrols()
         did_work = False
         for fld in self.sd_tools:
@@ -179,15 +171,15 @@ class SerialImager:
                 iterbotrecord=iterbotrec
             )
             self.ib_tool.mergeexecrecord(exrec, int(fld))
-            if exrec.get("iterdone", 0) > 0:
+            if exrec.get('iterdone', 0) > 0:
                 did_work = True
         return did_work
 
     def has_converged(self, nmajor_limit: int = -1) -> bool:
-        """
-        Check convergence (peak residual, niter, threshold …).
+        """Check convergence (peak residual, niter, threshold ...).
 
-        Returns ``True`` when cleaning should stop.
+        Returns:
+            ``True`` when cleaning should stop.
         """
         if self.ib_tool is None:
             return True
@@ -209,13 +201,13 @@ class SerialImager:
 
     def restore(self) -> None:
         """Restore the final CLEAN images."""
-        log.info("Restoring images …")
+        log.info('Restoring images …')
         for fld in self.sd_tools:
             self.sd_tools[fld].restore()
 
     def pbcor(self) -> None:
         """Apply primary-beam correction."""
-        log.info("PB-correcting images …")
+        log.info('PB-correcting images …')
         for fld in self.sd_tools:
             self.sd_tools[fld].pbcor()
 
@@ -224,12 +216,9 @@ class SerialImager:
     # ------------------------------------------------------------------
 
     def run(self) -> dict:
-        """
-        Run the full imaging + deconvolution pipeline.
+        """Run the full imaging + deconvolution pipeline.
 
-        Returns
-        -------
-        dict
+        Returns:
             Convergence summary.
         """
         try:
@@ -238,11 +227,11 @@ class SerialImager:
             self.make_pb()
 
             # Initial residual (dirty image)
-            if self.params.miscpars.get("calcres", True):
+            if self.params.miscpars.get('calcres', True):
                 self.run_major_cycle(is_first=True)
 
             if self.params.niter > 0:
-                nmajor = self.params.iterpars.get("nmajor", -1)
+                nmajor = self.params.iterpars.get('nmajor', -1)
                 # CASA order: hasConverged (initminorcycle) → updateMask
                 # (setupmask) → hasConverged (re-check after mask)
                 converged = self.has_converged(nmajor)
@@ -255,9 +244,9 @@ class SerialImager:
                     self.update_mask()
                     converged = self.has_converged(nmajor) or (not did)
 
-                if self.params.alldecpars["0"].get("restoration", True):
+                if self.params.alldecpars['0'].get('restoration', True):
                     self.restore()
-                if self.params.alldecpars["0"].get("pbcor", False):
+                if self.params.alldecpars['0'].get('pbcor', False):
                     self.pbcor()
 
             return self._summary()
@@ -270,7 +259,7 @@ class SerialImager:
 
     @property
     def _is_mfs(self) -> bool:
-        return self.params.specmode == "mfs"
+        return self.params.specmode == 'mfs'
 
     # -- tool initialization -------------------------------------------
 
@@ -292,14 +281,14 @@ class SerialImager:
 
         # Tell the imager about normalizer params so it creates the
         # correct image products on disk (e.g. .tt0/.tt1 for mtmfs).
-        self.si_tool.normalizerinfo(dict(self.params.allnormpars["0"]))
+        self.si_tool.normalizerinfo(dict(self.params.allnormpars['0']))
 
     def _init_deconvolvers(self) -> None:
         ct = _ct()
         for fld in sorted(self.params.alldecpars.keys()):
             sd = ct.synthesisdeconvolver()
             decpars = dict(self.params.alldecpars[fld])
-            decpars["imagename"] = self.params.allimpars[fld]["imagename"]
+            decpars['imagename'] = self.params.allimpars[fld]['imagename']
             sd.setupdeconvolution(decpars=decpars)
             self.sd_tools[fld] = sd
 
@@ -313,8 +302,8 @@ class SerialImager:
     def _set_weighting(self) -> None:
         # Only pass keys accepted by setweighting()
         _WEIGHT_KEYS = {
-            "type", "rmode", "noise", "robust", "fieldofview",
-            "npixels", "multifield", "usecubebriggs", "uvtaper",
+            'type', 'rmode', 'noise', 'robust', 'fieldofview',
+            'npixels', 'multifield', 'usecubebriggs', 'uvtaper',
         }
         wp = {k: v for k, v in self.params.weightpars.items() if k in _WEIGHT_KEYS}
         self.si_tool.setweighting(**wp)
@@ -344,19 +333,19 @@ class SerialImager:
         stale entry (casacore's ``SetupNewTable`` only blocks when
         the path physically exists AND is in the cache).
         """
-        imagename = self.params.allimpars["0"]["imagename"]
-        nterms = self.params.alldecpars.get("0", {}).get("nterms", 1)
-        extensions = [".residual"]
+        imagename = self.params.allimpars['0']['imagename']
+        nterms = self.params.alldecpars.get('0', {}).get('nterms', 1)
+        extensions = ['.residual']
         if nterms > 1:
-            extensions = [f".residual.tt{t}" for t in range(nterms)]
+            extensions = [f'.residual.tt{t}' for t in range(nterms)]
         for ext in extensions:
-            mask_dir = f"{imagename}{ext}/mask0"
+            mask_dir = f'{imagename}{ext}/mask0'
             if os.path.isdir(mask_dir):
                 try:
                     shutil.rmtree(mask_dir)
-                    log.debug("Removed stale mask subtable: %s", mask_dir)
+                    log.debug('Removed stale mask subtable: %s', mask_dir)
                 except OSError:
-                    log.debug("Could not remove mask subtable: %s",
+                    log.debug('Could not remove mask subtable: %s',
                               mask_dir, exc_info=True)
 
     def _normalize_psf(self) -> None:
@@ -390,7 +379,7 @@ class SerialImager:
 
     def _summary(self) -> dict:
         return {
-            "converged": self._converged,
-            "major_cycles": self._major_count,
-            "imagename": self.params.imagename,
+            'converged': self._converged,
+            'major_cycles': self._major_count,
+            'imagename': self.params.imagename,
         }

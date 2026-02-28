@@ -1,8 +1,7 @@
-"""
-Deconvolution wrapper.
+"""Deconvolution wrapper.
 
 Provides a standalone ``Deconvolver`` class that can be used
-independently of the full imaging pipeline — for example when
+independently of the full imaging pipeline -- for example when
 the residual / PSF already exist on disk and only minor-cycle
 deconvolution is needed.
 """
@@ -25,18 +24,13 @@ def _ct():
 
 
 class Deconvolver:
-    """
-    Thin wrapper around ``synthesisdeconvolver``.
+    """Thin wrapper around ``synthesisdeconvolver``.
 
-    Parameters
-    ----------
-    imagename : str
-        Image name prefix (images must already exist on disk).
-    decpars : dict
-        Deconvolution parameters (deconvolver, scales, nterms, …).
-    iterpars : dict, optional
-        Iteration control parameters.  If ``None``, the caller must
-        drive the minor cycle externally.
+    Args:
+        imagename: Image name prefix (images must already exist on disk).
+        decpars: Deconvolution parameters (deconvolver, scales, nterms, ...).
+        iterpars: Iteration control parameters.  If ``None``, the caller must
+            drive the minor cycle externally.
     """
 
     def __init__(
@@ -47,7 +41,7 @@ class Deconvolver:
     ):
         self.imagename = imagename
         self.decpars = dict(decpars)
-        self.decpars["imagename"] = imagename
+        self.decpars['imagename'] = imagename
         self.iterpars = iterpars
 
         self._sd = None
@@ -78,8 +72,7 @@ class Deconvolver:
         return self._sd.initminorcycle()
 
     def execute_minor(self, iterbotrecord: dict | None = None) -> dict:
-        """
-        Run one minor cycle.
+        """Run one minor cycle.
 
         If *iterbotrecord* is not given and an ``iterbotsink`` was
         created, the record is obtained automatically.
@@ -100,16 +93,13 @@ class Deconvolver:
     # ------------------------------------------------------------------
 
     def run_loop(self) -> dict:
-        """
-        Run the full minor-cycle loop (requires ``iterpars``).
+        """Run the full minor-cycle loop (requires ``iterpars``).
 
-        Returns
-        -------
-        dict
+        Returns:
             Summary with iteration count, peak residual, etc.
         """
         if self._ib is None:
-            raise RuntimeError("No iterpars — cannot run standalone loop")
+            raise RuntimeError('No iterpars — cannot run standalone loop')
         total_iter = 0
         while True:
             self._ib.resetminorcycleinfo()
@@ -119,5 +109,5 @@ class Deconvolver:
                 break
             exrec = self.execute_minor()
             self._ib.mergeexecrecord(exrec, 0)
-            total_iter += exrec.get("iterdone", 0)
-        return {"iterdone": total_iter}
+            total_iter += exrec.get('iterdone', 0)
+        return {'iterdone': total_iter}

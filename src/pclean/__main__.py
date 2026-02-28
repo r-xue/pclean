@@ -1,5 +1,4 @@
-"""
-CLI entry point for pclean.
+"""CLI entry point for pclean.
 
 Usage::
 

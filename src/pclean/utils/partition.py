@@ -1,5 +1,4 @@
-"""
-Data and image partitioning utilities.
+"""Data and image partitioning utilities.
 
 Uses ``casatools.synthesisutils`` to divide data for continuum
 (row-based) and cube (frequency-based) parallelism, and also
@@ -12,7 +11,6 @@ import copy
 import logging
 import math
 import re
-from typing import Any
 
 from pclean.params import PcleanParams
 
@@ -34,14 +32,14 @@ def _ct():
 # ======================================================================
 
 _FREQ_UNITS: dict[str, float] = {
-    "hz": 1.0,
-    "khz": 1e3,
-    "mhz": 1e6,
-    "ghz": 1e9,
-    "thz": 1e12,
+    'hz': 1.0,
+    'khz': 1e3,
+    'mhz': 1e6,
+    'ghz': 1e9,
+    'thz': 1e12,
 }
 
-_QTY_RE = re.compile(r"^([+-]?[\d.eE+-]+)\s*([a-zA-Z/]+)$")
+_QTY_RE = re.compile(r'^([+-]?[\d.eE+-]+)\s*([a-zA-Z/]+)$')
 
 
 def _parse_freq_hz(val: int | float | str) -> float | None:
@@ -64,7 +62,7 @@ def _parse_freq_hz(val: int | float | str) -> float | None:
 
 def _format_freq_ghz(hz: float) -> str:
     """Format a value in Hz as a GHz string."""
-    return f"{hz / 1e9:.10f}GHz"
+    return f'{hz / 1e9:.10f}GHz'
 
 
 # ======================================================================
@@ -76,23 +74,17 @@ def partition_continuum(
     params: PcleanParams,
     nparts: int,
 ) -> list[PcleanParams]:
-    """
-    Partition data by visibility rows for parallel continuum imaging.
+    """Partition data by visibility rows for parallel continuum imaging.
 
     Uses ``synthesisutils.contdatapartition()`` to split each MS across
     *nparts* workers.  Each returned ``PcleanParams`` has selection
     parameters narrowed to its row chunk and a unique partial image name.
 
-    Parameters
-    ----------
-    params : PcleanParams
-        Original (full) parameter set.
-    nparts : int
-        Number of partitions.
+    Args:
+        params: Original (full) parameter set.
+        nparts: Number of partitions.
 
-    Returns
-    -------
-    list[PcleanParams]
+    Returns:
         One ``PcleanParams`` per worker.
     """
     ct = _ct()
@@ -108,8 +100,8 @@ def partition_continuum(
     result: list[PcleanParams] = []
     for part_idx in range(nparts):
         # contdatapartition returns a nested dict:
-        #   {"0": {"ms0": {selpars}, "ms1": ...}, "1": ...}
-        # outer key = partition index, inner keys = "ms0", "ms1", ...
+        #   {'0': {'ms0': {selpars}, 'ms1': ...}, '1': ...}
+        # outer key = partition index, inner keys = 'ms0', 'ms1', ...
         part_key = str(part_idx)
         sub_sel: dict[str, dict] = {}
         for ms_key in sorted(params.allselpars.keys()):
@@ -121,7 +113,7 @@ def partition_continuum(
         sub = params.make_rowchunk_params(sub_sel, str(part_idx))
         result.append(sub)
 
-    log.info("Partitioned continuum data into %d chunks", len(result))
+    log.info('Partitioned continuum data into %d chunks', len(result))
     return result
 
 
@@ -134,23 +126,16 @@ def partition_cube(
     params: PcleanParams,
     nparts: int,
 ) -> list[PcleanParams]:
-    """
-    Partition the output cube by frequency channels for parallel cube
-    imaging.
+    """Partition the output cube by frequency channels for parallel cube imaging.
 
     Uses ``synthesisutils.cubedataimagepartition()`` when possible,
     falling back to an even-split heuristic.
 
-    Parameters
-    ----------
-    params : PcleanParams
-        Original (full) parameter set.
-    nparts : int
-        Number of partitions.
+    Args:
+        params: Original (full) parameter set.
+        nparts: Number of partitions.
 
-    Returns
-    -------
-    list[PcleanParams]
+    Returns:
         One ``PcleanParams`` per worker, covering a non-overlapping
         range of output channels.
     """
@@ -162,18 +147,18 @@ def partition_cube(
     try:
         return _partition_cube_via_su(params, nparts, nchan)
     except Exception as exc:
-        log.debug("synthesisutils cube partition failed (%s); "
-                   "using even-split fallback", exc)
+        log.debug('synthesisutils cube partition failed (%s); '
+                   'using even-split fallback', exc)
 
     return _partition_cube_even(params, nparts, nchan)
 
 
 def _resolve_nchan(params: PcleanParams) -> int:
     """Best-effort determination of the total output channel count."""
-    nchan = params.allimpars["0"].get("nchan", -1)
+    nchan = params.allimpars['0'].get('nchan', -1)
     if nchan > 0:
         return nchan
-    # If nchan == -1 the user wants "all channels".  We can't know the
+    # If nchan == -1 the user wants 'all channels'.  We can't know the
     # exact number without inspecting the MS, so return a large sentinel
     # and let the caller clamp later.
     return -1
@@ -184,11 +169,11 @@ def _partition_cube_via_su(
     nparts: int,
     nchan: int,
 ) -> list[PcleanParams]:
-    csys = params.allimpars["0"].get("csys", {})
+    csys = params.allimpars['0'].get('csys', {})
     if not csys:
         raise RuntimeError(
-            "No coordinate system (csys) available in impars; "
-            "cannot use synthesisutils for cube partitioning"
+            'No coordinate system (csys) available in impars; '
+            'cannot use synthesisutils for cube partitioning'
         )
 
     ct = _ct()
@@ -209,8 +194,8 @@ def _partition_cube_via_su(
     for pidx in range(nparts):
         p = params.clone()
         # cubedataimagepartition returns a nested dict:
-        #   {"0": {"ms0": {selpars}, "nchan": N, "coordsys": ...}, "1": ...}
-        # outer key = partition index, inner keys = "ms0", "ms1", ...
+        #   {'0': {'ms0': {selpars}, 'nchan': N, 'coordsys': ...}, '1': ...}
+        # outer key = partition index, inner keys = 'ms0', 'ms1', ...
         part_key = str(pidx)
         if part_key in allpars:
             part_rec = allpars[part_key]
@@ -222,21 +207,21 @@ def _partition_cube_via_su(
                 if k.startswith('ms'):
                     continue  # already handled above
                 p.allimpars['0'][k] = v
-        sub_nc = p.allimpars["0"].get("nchan", nchan)
+        sub_nc = p.allimpars['0'].get('nchan', nchan)
         total_sub_nchan += sub_nc
-        new_name = f"{params.imagename}.subcube.{pidx}"
-        p.allimpars["0"]["imagename"] = new_name
-        p.allnormpars["0"]["imagename"] = new_name
-        p.allgridpars["0"]["imagename"] = new_name
-        if "allimages" in p.iterpars:
-            p.iterpars["allimages"]["0"]["imagename"] = new_name
+        new_name = f'{params.imagename}.subcube.{pidx}'
+        p.allimpars['0']['imagename'] = new_name
+        p.allnormpars['0']['imagename'] = new_name
+        p.allgridpars['0']['imagename'] = new_name
+        if 'allimages' in p.iterpars:
+            p.iterpars['allimages']['0']['imagename'] = new_name
         result.append(p)
 
     # Validate: total subcube channels must equal original nchan
     if nchan > 0 and total_sub_nchan != nchan:
         raise RuntimeError(
-            f"synthesisutils partition produced {total_sub_nchan} total "
-            f"channels across {nparts} subcubes, expected {nchan}"
+            f'synthesisutils partition produced {total_sub_nchan} total '
+            f'channels across {nparts} subcubes, expected {nchan}'
         )
 
     return result
@@ -255,13 +240,13 @@ def _partition_cube_even(
     to channel-index based partitioning.
     """
     if nchan <= 0:
-        log.warning("nchan unknown — falling back to single partition")
+        log.warning('nchan unknown — falling back to single partition')
         nparts = 1
         nchan = -1
 
-    imp = params.allimpars["0"]
-    orig_start = imp.get("start", "")
-    orig_width = imp.get("width", "")
+    imp = params.allimpars['0']
+    orig_start = imp.get('start', '')
+    orig_width = imp.get('width', '')
 
     start_hz = _parse_freq_hz(orig_start)
     width_hz = _parse_freq_hz(orig_width)
@@ -286,13 +271,13 @@ def _partition_cube_even(
             # Channel-index fallback
             sub_start = str(chan_offset)
 
-        log.info("  subcube %d: start=%s  nchan=%d  (chan_offset=%d)",
+        log.info('  subcube %d: start=%s  nchan=%d  (chan_offset=%d)',
                  i, sub_start, nc, chan_offset)
         sub = params.make_subcube_params(sub_start, nc, str(i))
         result.append(sub)
         chan_offset += nc
 
-    log.info("Even-split cube partition: %d sub-cubes, total_chan=%d",
+    log.info('Even-split cube partition: %d sub-cubes, total_chan=%d',
              len(result), chan_offset)
     return result
 
@@ -304,5 +289,5 @@ def _partition_cube_even(
 
 def partial_image_name(base: str, part_index: int) -> str:
     """Return the partial-image path for a given partition index."""
-    workdir = f"{base}.workdirectory"
-    return f"{workdir}/{base}.n{part_index}"
+    workdir = f'{base}.workdirectory'
+    return f'{workdir}/{base}.n{part_index}'

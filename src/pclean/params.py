@@ -1,8 +1,7 @@
-"""
-Parameter container and validation for pclean.
+"""Parameter container and validation for pclean.
 
 Mirrors CASA's ``ImagerParameters`` but adds Dask-specific options and
-exposes each parameter group as a plain dict for easy serialization to
+exposes each parameter group as a plain dict for easy serialisation to
 Dask workers.
 """
 
@@ -10,7 +9,6 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Defaults (matching tclean where possible)
@@ -39,65 +37,65 @@ _SEL_KEY_ALIASES: dict[str, str] = {
 }
 
 _DEFAULT_IMG = dict(
-    imagename="",
+    imagename='',
     imsize=[100],
-    cell=["1arcsec"],
-    phasecenter="",
-    stokes="I",
-    projection="SIN",
-    specmode="mfs",
-    reffreq="",
+    cell=['1arcsec'],
+    phasecenter='',
+    stokes='I',
+    projection='SIN',
+    specmode='mfs',
+    reffreq='',
     nchan=-1,
-    start="",
-    width="",
-    outframe="LSRK",
-    veltype="radio",
+    start='',
+    width='',
+    outframe='LSRK',
+    veltype='radio',
     restfreq=[],
-    interpolation="linear",
+    interpolation='linear',
     perchanweightdensity=True,
-    startmodel="",
+    startmodel='',
     # These must be in impars so defineimage() creates the correct
     # image products (e.g. .tt0/.tt1 for mtmfs).  Matches CASA's
     # ImagerParameters.allimpars.
     nterms=2,
-    deconvolver="hogbom",
+    deconvolver='hogbom',
     restart=True,
 )
 
 _DEFAULT_GRID = dict(
-    gridder="standard",
+    gridder='standard',
     facets=1,
     wprojplanes=1,
-    vptable="",
+    vptable='',
     mosweight=True,
     aterm=True,
     psterm=False,
     wbawp=True,
     conjbeams=False,
-    cfcache="",
+    cfcache='',
     usepointing=False,
     computepastep=360.0,
     rotatepastep=360.0,
     pointingoffsetsigdev=[],
     pblimit=0.2,
-    normtype="flatnoise",
-    psfphasecenter="",
+    normtype='flatnoise',
+    psfphasecenter='',
 )
 
 _DEFAULT_WEIGHT = dict(
-    type="natural",
-    rmode="none",
+    type='natural',
+    rmode='none',
     robust=0.5,
-    noise="1.0Jy",
+    noise='1.0Jy',
     npixels=0,
-    fieldofview="",
+    fieldofview='',
     uvtaper=[],
     multifield=False,
     usecubebriggs=True,
 )
 
 _DEFAULT_DEC = dict(
-    deconvolver="hogbom",
+    deconvolver='hogbom',
     scales=[],
     nterms=2,
     smallscalebias=0.0,
@@ -106,8 +104,8 @@ _DEFAULT_DEC = dict(
     restoration=True,
     restoringbeam=[],
     pbcor=False,
-    usemask="user",
-    mask="",
+    usemask='user',
+    mask='',
     pbmask=0.0,
     sidelobethreshold=3.0,
     noisethreshold=5.0,
@@ -126,14 +124,14 @@ _DEFAULT_DEC = dict(
 
 _DEFAULT_NORM = dict(
     pblimit=0.2,
-    normtype="flatnoise",
+    normtype='flatnoise',
     psfcutoff=0.35,
 )
 
 _DEFAULT_ITER = dict(
     niter=0,
     loopgain=0.1,
-    threshold="0.0mJy",
+    threshold='0.0mJy',
     nsigma=0.0,
     cycleniter=-1,
     cyclefactor=1.0,
@@ -142,7 +140,7 @@ _DEFAULT_ITER = dict(
     interactive=False,
     nmajor=-1,
     fullsummary=False,
-    savemodel="none",
+    savemodel='none',
 )
 
 _DEFAULT_MISC = dict(
@@ -157,12 +155,12 @@ _DEFAULT_MISC = dict(
 
 _DEFAULT_PARALLEL = dict(
     parallel=False,
-    nworkers=None,           # None → auto-detect
+    nworkers=None,           # None -> auto-detect
     scheduler_address=None,  # connect to existing cluster
     threads_per_worker=1,
-    memory_limit="0",
+    memory_limit='0',
     local_directory=None,
-    cube_chunksize=-1,       # -1 → nparts=nworkers; 1 → per-channel; N → N ch/task
+    cube_chunksize=-1,       # -1 -> nparts=nworkers; 1 -> per-channel; N -> N ch/task
     keep_subcubes=False,     # preserve subcube artifacts after concatenation
     keep_partimages=False,   # preserve partial images after continuum gather
 )
@@ -183,7 +181,7 @@ def _merge(defaults: dict, overrides: dict) -> dict:
     return out
 
 
-def _ensure_list(val: Any) -> list:
+def _ensure_list(val: object) -> list:
     if isinstance(val, str):
         return [val]
     try:
@@ -197,25 +195,21 @@ def _ensure_list(val: Any) -> list:
 # ---------------------------------------------------------------------------
 
 class PcleanParams:
-    """
-    Validated, serialisable parameter container for *pclean*.
+    """Validated, serialisable parameter container for *pclean*.
 
     Organises all tclean-compatible parameters into sub-dicts that map
     directly to the ``casatools`` synthesis-tool APIs, plus Dask-specific
     settings.
 
-    Parameters
-    ----------
-    vis : str or list[str]
-        Measurement set path(s).
-    **kwargs
-        Any parameter accepted by CASA ``tclean`` plus the extra
-        ``nworkers``, ``scheduler_address``, ``threads_per_worker``,
-        ``memory_limit``, and ``local_directory`` keys.
+    Args:
+        vis: Measurement set path(s).
+        **kwargs: Any parameter accepted by CASA ``tclean`` plus the extra
+            ``nworkers``, ``scheduler_address``, ``threads_per_worker``,
+            ``memory_limit``, and ``local_directory`` keys.
     """
 
     def __init__(self, vis: str | Sequence[str] = '', **kwargs):
-        vis = _ensure_list(vis) if vis else [""]
+        vis = _ensure_list(vis) if vis else ['']
 
         # ---- selection (one dict per MS, keyed as 'ms0', 'ms1', ...) -----
         self.allselpars: dict[str, dict] = {}
@@ -235,91 +229,91 @@ class PcleanParams:
         # ---- image definition (field 0) ---------------------------------
         self.allimpars: dict[str, dict] = {}
         imp = _merge(_DEFAULT_IMG, kwargs)
-        imp["imsize"] = _ensure_list(imp["imsize"])
-        if len(imp["imsize"]) == 1:
-            imp["imsize"] = imp["imsize"] * 2
-        imp["cell"] = _ensure_list(imp["cell"])
-        if len(imp["cell"]) == 1:
-            imp["cell"] = imp["cell"] * 2
-        imp["restfreq"] = _ensure_list(imp.get("restfreq", []))
-        self.allimpars["0"] = imp
+        imp['imsize'] = _ensure_list(imp['imsize'])
+        if len(imp['imsize']) == 1:
+            imp['imsize'] = imp['imsize'] * 2
+        imp['cell'] = _ensure_list(imp['cell'])
+        if len(imp['cell']) == 1:
+            imp['cell'] = imp['cell'] * 2
+        imp['restfreq'] = _ensure_list(imp.get('restfreq', []))
+        self.allimpars['0'] = imp
 
         # ---- gridding ---------------------------------------------------
         self.allgridpars: dict[str, dict] = {}
         gp = _merge(_DEFAULT_GRID, kwargs)
         # C++ SynthesisParamsGrid expects these keys in gridpars too
-        gp["imagename"] = imp["imagename"]
-        gp["deconvolver"] = kwargs.get("deconvolver", "hogbom")
-        gp["interpolation"] = imp.get("interpolation", "linear")
-        self.allgridpars["0"] = gp
+        gp['imagename'] = imp['imagename']
+        gp['deconvolver'] = kwargs.get('deconvolver', 'hogbom')
+        gp['interpolation'] = imp.get('interpolation', 'linear')
+        self.allgridpars['0'] = gp
 
         # ---- weighting ---------------------------------------------------
         wp = _merge(_DEFAULT_WEIGHT, kwargs)
         # tclean uses 'weighting' but casatools uses 'type'
-        weighting = kwargs.get("weighting", wp.get("type", "natural"))
+        weighting = kwargs.get('weighting', wp.get('type', 'natural'))
         # Translate composite weighting names to C++ type + rmode
-        if weighting == "briggsbwtaper":
-            wp["type"] = "briggs"
-            wp["rmode"] = "bwtaper"
+        if weighting == 'briggsbwtaper':
+            wp['type'] = 'briggs'
+            wp['rmode'] = 'bwtaper'
             if _ALLOW_BRIGGS_BW_TAPER:
                 # Pre-compute fractional bandwidth from full cube so each
                 # parallel sub-cube worker can apply the correct taper even
                 # when it images only a single channel (fracBW=0 fallback).
                 from pclean.utils.partition import _parse_freq_hz
-                start_hz = _parse_freq_hz(kwargs.get("start", ""))
-                width_hz = _parse_freq_hz(kwargs.get("width", ""))
-                nchan_full = kwargs.get("nchan", -1)
+                start_hz = _parse_freq_hz(kwargs.get('start', ''))
+                width_hz = _parse_freq_hz(kwargs.get('width', ''))
+                nchan_full = kwargs.get('nchan', -1)
                 if start_hz is not None and width_hz is not None and nchan_full > 1:
                     min_freq = start_hz
                     max_freq = start_hz + (nchan_full - 1) * abs(width_hz)
                     if min_freq > max_freq:
                         min_freq, max_freq = max_freq, min_freq
-                    wp["fracbw"] = 2.0 * (max_freq - min_freq) / (max_freq + min_freq)
+                    wp['fracbw'] = 2.0 * (max_freq - min_freq) / (max_freq + min_freq)
             else:
-                wp.pop("fracbw", None)  # ensure fracbw is not set if bwtaper is disabled
-        elif weighting == "briggsabs":
-            wp["type"] = "briggs"
-            wp["rmode"] = "abs"
-        elif weighting == "briggs":
-            wp["type"] = "briggs"
-            wp["rmode"] = "norm"
+                wp.pop('fracbw', None)  # ensure fracbw is not set if bwtaper is disabled
+        elif weighting == 'briggsabs':
+            wp['type'] = 'briggs'
+            wp['rmode'] = 'abs'
+        elif weighting == 'briggs':
+            wp['type'] = 'briggs'
+            wp['rmode'] = 'norm'
         else:
-            wp["type"] = weighting
-            wp.setdefault("rmode", "none")
+            wp['type'] = weighting
+            wp.setdefault('rmode', 'none')
         # mosweight → multifield flag expected by setweighting()
-        wp["multifield"] = kwargs.get("mosweight", False)
-        wp["usecubebriggs"] = kwargs.get("perchanweightdensity", True)
+        wp['multifield'] = kwargs.get('mosweight', False)
+        wp['usecubebriggs'] = kwargs.get('perchanweightdensity', True)
         self.weightpars: dict = wp
 
         # ---- deconvolution -----------------------------------------------
         self.alldecpars: dict[str, dict] = {}
         dp = _merge(_DEFAULT_DEC, kwargs)
-        dp["scales"] = _ensure_list(dp.get("scales", []))
-        dp["restoringbeam"] = _ensure_list(dp.get("restoringbeam", []))
+        dp['scales'] = _ensure_list(dp.get('scales', []))
+        dp['restoringbeam'] = _ensure_list(dp.get('restoringbeam', []))
         # fullsummary must be consistent between iterbotsink and deconvolver
-        dp["fullsummary"] = kwargs.get("fullsummary", False)
-        self.alldecpars["0"] = dp
+        dp['fullsummary'] = kwargs.get('fullsummary', False)
+        self.alldecpars['0'] = dp
 
         # ---- normalizer --------------------------------------------------
         self.allnormpars: dict[str, dict] = {}
         np_ = _merge(_DEFAULT_NORM, kwargs)
-        np_["imagename"] = imp["imagename"]
-        np_["nterms"] = dp["nterms"] if dp["deconvolver"] == "mtmfs" else 1
-        np_["deconvolver"] = dp["deconvolver"]
-        np_["specmode"] = imp["specmode"]
-        self.allnormpars["0"] = np_
+        np_['imagename'] = imp['imagename']
+        np_['nterms'] = dp['nterms'] if dp['deconvolver'] == 'mtmfs' else 1
+        np_['deconvolver'] = dp['deconvolver']
+        np_['specmode'] = imp['specmode']
+        self.allnormpars['0'] = np_
 
         # ---- iteration control -------------------------------------------
         ip = _merge(_DEFAULT_ITER, kwargs)
         # tclean uses 'gain' but iterbotsink expects 'loopgain'
-        if "gain" in kwargs and "loopgain" not in kwargs:
-            ip["loopgain"] = kwargs["gain"]
+        if 'gain' in kwargs and 'loopgain' not in kwargs:
+            ip['loopgain'] = kwargs['gain']
         # The C++ iterbotsink requires an 'allimages' sub-record
-        ip["allimages"] = {}
+        ip['allimages'] = {}
         for fld in self.allimpars:
-            ip["allimages"][fld] = {
-                "imagename": self.allimpars[fld]["imagename"],
-                "multiterm": (self.alldecpars[fld]["deconvolver"] == "mtmfs"),
+            ip['allimages'][fld] = {
+                'imagename': self.allimpars[fld]['imagename'],
+                'multiterm': (self.alldecpars[fld]['deconvolver'] == 'mtmfs'),
             }
         self.iterpars: dict = ip
 
@@ -335,19 +329,19 @@ class PcleanParams:
 
     @property
     def specmode(self) -> str:
-        return self.allimpars["0"]["specmode"]
+        return self.allimpars['0']['specmode']
 
     @property
     def imagename(self) -> str:
-        return self.allimpars["0"]["imagename"]
+        return self.allimpars['0']['imagename']
 
     @property
     def parallel(self) -> bool:
-        return self.parallelpars.get("parallel", False)
+        return self.parallelpars.get('parallel', False)
 
     @property
     def niter(self) -> int:
-        return self.iterpars.get("niter", 0)
+        return self.iterpars.get('niter', 0)
 
     @property
     def nfields(self) -> int:
@@ -359,15 +353,15 @@ class PcleanParams:
 
     @property
     def deconvolver(self) -> str:
-        return self.alldecpars["0"]["deconvolver"]
+        return self.alldecpars['0']['deconvolver']
 
     @property
     def is_cube(self) -> bool:
-        return self.specmode in ("cube", "cubedata", "cubesource")
+        return self.specmode in ('cube', 'cubedata', 'cubesource')
 
     @property
     def is_mfs(self) -> bool:
-        return self.specmode == "mfs"
+        return self.specmode == 'mfs'
 
     # ------------------------------------------------------------------
     # Serialization helpers (for Dask)
@@ -388,21 +382,21 @@ class PcleanParams:
         )
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'PcleanParams':
+    def from_dict(cls, d: dict) -> PcleanParams:
         """Re-hydrate from a plain dict (inverse of ``to_dict``)."""
         obj = cls.__new__(cls)
-        obj.allselpars = d["allselpars"]
-        obj.allimpars = d["allimpars"]
-        obj.allgridpars = d["allgridpars"]
-        obj.weightpars = d["weightpars"]
-        obj.alldecpars = d["alldecpars"]
-        obj.allnormpars = d["allnormpars"]
-        obj.iterpars = d["iterpars"]
-        obj.miscpars = d["miscpars"]
-        obj.parallelpars = d["parallelpars"]
+        obj.allselpars = d['allselpars']
+        obj.allimpars = d['allimpars']
+        obj.allgridpars = d['allgridpars']
+        obj.weightpars = d['weightpars']
+        obj.alldecpars = d['alldecpars']
+        obj.allnormpars = d['allnormpars']
+        obj.iterpars = d['iterpars']
+        obj.miscpars = d['miscpars']
+        obj.parallelpars = d['parallelpars']
         return obj
 
-    def clone(self) -> 'PcleanParams':
+    def clone(self) -> PcleanParams:
         return PcleanParams.from_dict(self.to_dict())
 
     # ------------------------------------------------------------------
@@ -414,43 +408,39 @@ class PcleanParams:
         start: int | str,
         nchan: int,
         image_suffix: str,
-    ) -> 'PcleanParams':
+    ) -> PcleanParams:
         """Return a copy tuned for a channel sub-range (cube parallelism).
 
-        Parameters
-        ----------
-        start : int or str
-            Start channel (int) or frequency/velocity string for the subcube.
-        nchan : int
-            Number of channels in this subcube.
-        image_suffix : str
-            Suffix appended to the base imagename.
+        Args:
+            start: Start channel (int) or frequency/velocity string for the subcube.
+            nchan: Number of channels in this subcube.
+            image_suffix: Suffix appended to the base imagename.
         """
         p = self.clone()
-        imp = p.allimpars["0"]
-        imp["nchan"] = nchan
-        imp["start"] = start if isinstance(start, str) else str(start)
-        imp["imagename"] = f"{self.imagename}.subcube.{image_suffix}"
+        imp = p.allimpars['0']
+        imp['nchan'] = nchan
+        imp['start'] = start if isinstance(start, str) else str(start)
+        imp['imagename'] = f'{self.imagename}.subcube.{image_suffix}'
         # All param groups must track the new image name
-        p.allnormpars["0"]["imagename"] = imp["imagename"]
-        p.allgridpars["0"]["imagename"] = imp["imagename"]
-        if "allimages" in p.iterpars:
-            p.iterpars["allimages"]["0"]["imagename"] = imp["imagename"]
+        p.allnormpars['0']['imagename'] = imp['imagename']
+        p.allgridpars['0']['imagename'] = imp['imagename']
+        if 'allimages' in p.iterpars:
+            p.iterpars['allimages']['0']['imagename'] = imp['imagename']
         return p
 
     def make_rowchunk_params(
         self,
         partition_selpars: dict,
         image_suffix: str,
-    ) -> 'PcleanParams':
+    ) -> PcleanParams:
         """Return a copy with selection pars limited to a row chunk
         (continuum parallelism)."""
         p = self.clone()
         p.allselpars = copy.deepcopy(partition_selpars)
-        imp = p.allimpars["0"]
-        imp["imagename"] = f"{self.imagename}.part.{image_suffix}"
-        p.allnormpars["0"]["imagename"] = imp["imagename"]
-        p.allgridpars["0"]["imagename"] = imp["imagename"]
-        if "allimages" in p.iterpars:
-            p.iterpars["allimages"]["0"]["imagename"] = imp["imagename"]
+        imp = p.allimpars['0']
+        imp['imagename'] = f'{self.imagename}.part.{image_suffix}'
+        p.allnormpars['0']['imagename'] = imp['imagename']
+        p.allgridpars['0']['imagename'] = imp['imagename']
+        if 'allimages' in p.iterpars:
+            p.iterpars['allimages']['0']['imagename'] = imp['imagename']
         return p

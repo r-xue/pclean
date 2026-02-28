@@ -1,5 +1,4 @@
-"""
-Parallel continuum (MFS) imaging engine.
+"""Parallel continuum (MFS) imaging engine.
 
 Distributes *visibility rows* across Dask workers.  Each worker runs
 its own ``synthesisimager`` on a data chunk to produce a partial image.
@@ -7,10 +6,10 @@ The coordinator then uses ``synthesisnormalizer`` to **gather** partial
 images, normalize, run the (serial) minor cycle, and **scatter** the
 updated model back to workers for the next major cycle.
 
-Parallelism pattern
--------------------
-* **Major cycle** (gridding / degridding) — parallel across row chunks
-* **Minor cycle** (deconvolution) — serial on the gathered full image
+Parallelism pattern::
+
+    Major cycle (gridding / degridding) -- parallel across row chunks
+    Minor cycle (deconvolution)         -- serial on the gathered full image
 """
 
 from __future__ import annotations
@@ -40,15 +39,11 @@ def _ct():
 
 
 class ParallelContinuumImager:
-    """
-    Row-parallel continuum (MFS) CLEAN imager.
+    """Row-parallel continuum (MFS) CLEAN imager.
 
-    Parameters
-    ----------
-    params : PcleanParams
-        Full parameter set (specmode should be ``"mfs"``).
-    cluster : DaskClusterManager
-        Running Dask cluster.
+    Args:
+        params: Full parameter set (specmode should be ``'mfs'``).
+        cluster: Running Dask cluster.
     """
 
     def __init__(self, params: PcleanParams, cluster: DaskClusterManager):
@@ -67,12 +62,9 @@ class ParallelContinuumImager:
     # ------------------------------------------------------------------
 
     def run(self) -> dict:
-        """
-        Execute the full parallel continuum pipeline.
+        """Execute the full parallel continuum pipeline.
 
-        Returns
-        -------
-        dict
+        Returns:
             Convergence summary.
         """
         try:
@@ -91,7 +83,7 @@ class ParallelContinuumImager:
             self._normalizer.normalize_pb()
 
             # Initial residual
-            if self.params.miscpars.get("calcres", True):
+            if self.params.miscpars.get('calcres', True):
                 self._parallel_major_cycle(is_first=True)
                 self._normalizer.post_major_mfs()
 
@@ -107,9 +99,9 @@ class ParallelContinuumImager:
                         self._normalizer.post_major_mfs()
                     converged = self._check_convergence() or (not did)
 
-                if self.params.alldecpars["0"].get("restoration", True):
+                if self.params.alldecpars['0'].get('restoration', True):
                     self._deconvolver.restore()
-                if self.params.alldecpars["0"].get("pbcor", False):
+                if self.params.alldecpars['0'].get('pbcor', False):
                     self._deconvolver.pbcor()
 
             # Clean up partial images unless keep_partimages is set
@@ -128,7 +120,7 @@ class ParallelContinuumImager:
     def _partition_data(self) -> None:
         nworkers = self.cluster.nworkers
         self._part_params = partition_continuum(self.params, nworkers)
-        log.info("Continuum imaging: %d row-chunks on %d workers",
+        log.info('Continuum imaging: %d row-chunks on %d workers',
                  len(self._part_params), nworkers)
 
     def _create_actors(self) -> None:
@@ -162,15 +154,15 @@ class ParallelContinuumImager:
 
     def _setup_normalizer(self) -> None:
         partimagenames = [pp.imagename for pp in self._part_params]
-        normpars = dict(self.params.allnormpars["0"])
-        normpars["partimagenames"] = partimagenames
+        normpars = dict(self.params.allnormpars['0'])
+        normpars['partimagenames'] = partimagenames
         self._normalizer = Normalizer(normpars, partimagenames)
         self._normalizer.setup()
 
     def _setup_deconvolver(self) -> None:
         self._deconvolver = Deconvolver(
             imagename=self.params.imagename,
-            decpars=dict(self.params.alldecpars["0"]),
+            decpars=dict(self.params.alldecpars['0']),
         )
         self._deconvolver.setup()
 
@@ -184,21 +176,21 @@ class ParallelContinuumImager:
     # ------------------------------------------------------------------
 
     def _parallel_make_psf(self) -> None:
-        log.info("Computing PSF (parallel) …")
+        log.info('Computing PSF (parallel) …')
         futures = [a.make_psf() for a in self._actors]
         _wait_all(futures)
 
     def _parallel_make_pb(self) -> None:
-        log.info("Computing PB (parallel) …")
+        log.info('Computing PB (parallel) …')
         futures = [a.make_pb() for a in self._actors]
         _wait_all(futures)
 
     def _parallel_major_cycle(self, is_first: bool = False) -> None:
-        log.info("Major cycle %d (parallel) …", self._major_count)
+        log.info('Major cycle %d (parallel) …', self._major_count)
         last = False
         if self._ib_tool is not None and not is_first:
             last = self._ib_tool.cleanComplete(lastcyclecheck=True)
-        controls = {"lastcycle": last}
+        controls = {'lastcycle': last}
 
         futures = [a.execute_major_cycle(controls) for a in self._actors]
         _wait_all(futures)
@@ -215,13 +207,13 @@ class ParallelContinuumImager:
         iterbotrec = self._ib_tool.getminorcyclecontrols()
         exrec = self._deconvolver.execute_minor(iterbotrec)
         self._ib_tool.mergeexecrecord(exrec, 0)
-        return exrec.get("iterdone", 0) > 0
+        return exrec.get('iterdone', 0) > 0
 
     def _check_convergence(self) -> bool:
         self._ib_tool.resetminorcycleinfo()
         initrec = self._deconvolver.init_minor()
         self._ib_tool.mergeinitrecord(initrec)
-        nmajor = self.params.iterpars.get("nmajor", -1)
+        nmajor = self.params.iterpars.get('nmajor', -1)
         reached = nmajor > 0 and self._major_count >= nmajor
         return self._ib_tool.cleanComplete(reachedMajorLimit=reached)
 
@@ -257,9 +249,9 @@ class ParallelContinuumImager:
 
     def _summary(self) -> dict:
         return {
-            "imagename": self.params.imagename,
-            "major_cycles": self._major_count,
-            "nparts": len(self._part_params),
+            'imagename': self.params.imagename,
+            'major_cycles': self._major_count,
+            'nparts': len(self._part_params),
         }
 
 
