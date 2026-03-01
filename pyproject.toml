@@ -1,20 +1,24 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pclean"
-version = "0.1.0"
+name = "casa-pclean"
+dynamic = ["version"]
 description = "Parallel CLEAN imaging using Dask and CASA tools"
 readme = "README.md"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 license-files = ["LICENSE"]
 requires-python = ">= 3.10"
@@ -24,16 +28,30 @@ dependencies = [
     "distributed",
     "numpy",
 ]
-keywords = ["astronomy", "pipeline", "ALMA", "VLA", "radio-astronomy"]
+keywords = ["astronomy", "pipeline", "ALMA", "VLA", "radio-astronomy", "CASA", "imaging"]
 authors = [
     {name = "MiCASA", email = "rx.astro@gmail.com"},
 ]
+
+[project.urls]
+Homepage = "https://github.com/r-xue/pclean"
+Repository = "https://github.com/r-xue/pclean"
+Issues = "https://github.com/r-xue/pclean/issues"
+Documentation = "https://github.com/r-xue/pclean/tree/main/docs"
+Changelog = "https://github.com/r-xue/pclean/releases"
+
+[project.scripts]
+pclean = "pclean.__main__:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-cov",
 ]
+
+[tool.setuptools-scm]
+root = "."
+version_file = "src/pclean/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -120,7 +138,7 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64"]
 
 [tool.pixi.pypi-dependencies]
-pclean = { path = ".", editable = true }
+casa-pclean = { path = ".", editable = true }
 
 [tool.pixi.system-requirements]
 macos = "15.0"

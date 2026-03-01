@@ -165,8 +165,10 @@ pixi run -e dev fmt           # ruff format
 ## References and acknowledgements
 
 `pclean` builds on the imaging and calibration infrastructure developed by
-the CASA team at NRAO / ESO / NAOJ.  The parallel imaging design draws on
-ideas described in [CASA Memo 13](https://casadocs.readthedocs.io/en/stable/notebooks/memo-series.html).
+the CASA team at NRAO / ESO / NAOJ.  The scientific algorithms — gridding,
+deconvolution, self-calibration — are the product of decades of CASA
+development; `pclean` is purely a **computing-engineering** effort that
+re-orchestrates those mature tools with a modern distributed runtime.
 
 If this package contributes to published research, please cite the CASA
 software:
@@ -181,14 +183,42 @@ software:
 > *ASP Conf. Ser.*, 376, 127.
 > [ads:2007ASPC..376..127M](https://ui.adsabs.harvard.edu/abs/2007ASPC..376..127M)
 
-Related memo:
+### Relation to CASA's built-in parallel imaging
 
-> Sekhar, S., Rau, U., & Xue, R. 2024, "CASA Memo 13 — Cube Parallelization with CASA,"
-> NRAO. [casadocs](https://casadocs.readthedocs.io/en/latest/notebooks/memo-series.html)
+`pclean`'s parallel design closely follows the Python orchestration layer that
+CASA's `tclean` task already provides through the
+`casatasks.private.imagerhelpers` module:
+
+| CASA Python class | pclean equivalent | role |
+| --- | --- | --- |
+| `PySynthesisImager` | `SerialImager` | serial imaging loop (init → PSF → major/minor → restore) |
+| `PyParallelCubeSynthesisImager` | `ParallelCubeImager` | each worker runs an independent `SerialImager` on a frequency sub-cube |
+| `PyParallelContSynthesisImager` | `ParallelContinuumImager` | row-partitioned gridding across workers; minor cycles run serially on the coordinator |
+| `PyParallelImagerHelper` | `DaskClusterManager` | cluster lifecycle, job dispatch, and result collection |
+
+The structural decomposition is the same: partition → image → normalize →
+deconvolve → iterate, with the same split between embarrassingly-parallel cube
+channels and gather/scatter continuum cycles.  Both code-bases use polymorphic
+dispatch — `task_tclean.py` picks between `PySynthesisImager`,
+`PyParallelCubeSynthesisImager`, or `PyParallelContSynthesisImager` based on
+`specmode` and MPI availability; `pclean` makes the same choice based on its
+own `parallel` and `is_cube` flags.
+
+The key difference is the **parallelism transport**.  CASA's
+`PyParallelImagerHelper` sends Python code strings to MPI workers via
+`casampi.MPIInterface`, requiring `mpicasa` and a
+shared filesystem.  `pclean` replaces this with
+[Dask Distributed](https://distributed.dask.org/) futures and actors,
+eliminating the MPI dependency in exchange for Dask scheduling overhead.
+
+See also [CASA Memo 13](https://casadocs.readthedocs.io/en/latest/notebooks/memo-series.html)
+(Sekhar, Rau & Xue 2024) for benchmarking of per-channel cube imaging
+distributed via SLURM job arrays that motivated this work
+([benchmarking scripts](https://github.com/Kitchi/cube_parallelization_benchmarking)).
 
 ## License
 
-Copyright 2025 the pclean authors.
+Copyright 2026 the `pclean` authors.
 
 GPL-3.0-or-later — see [LICENSE](LICENSE) for details.
 

@@ -9,7 +9,11 @@ import logging
 
 from pclean.pclean import pclean
 
-__version__ = '0.1.0'
+try:
+    from pclean._version import version as __version__
+except ModuleNotFoundError:  # editable install without build
+    __version__ = '0.0.0.dev0'
+
 __all__ = ['pclean']
 
 # Configure a default stream handler so that log messages from pclean
