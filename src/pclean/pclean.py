@@ -331,6 +331,11 @@ def _dispatch(config: PcleanConfig) -> dict:
         return _run_parallel_continuum(config)
 
 
+# Tell Sphinx autodoc to render this function as ``pclean.pclean()``
+# instead of ``pclean.pclean.pclean()``.
+pclean.__module__ = 'pclean'
+
+
 def _run_serial(config: PcleanConfig) -> dict:
     from pclean.imaging.serial_imager import SerialImager
 

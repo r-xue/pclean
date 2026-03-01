@@ -1,7 +1,7 @@
 # pclean API
 
 ```{eval-rst}
-.. automodule:: pclean.pclean
+.. automodule:: pclean
    :members:
    :undoc-members:
    :show-inheritance:
