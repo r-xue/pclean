@@ -1,0 +1,12 @@
+/* Widen the content area (furo default is ~46em) */
+:root {
+    --content-width: 100%;
+}
+
+/* Hide the "Made with Sphinx and Furo" footer credit */
+.bottom-of-page .left-details {
+    font-size: 0;        /* collapse all inline text + links */
+}
+.bottom-of-page .left-details .copyright {
+    font-size: 0.81rem;  /* restore only the copyright block */
+}

@@ -2,6 +2,7 @@
 
 [![tests](https://img.shields.io/github/actions/workflow/status/r-xue/pclean/test.yml?branch=main&logo=github&label=tests)](https://github.com/r-xue/pclean/actions/workflows/test.yml)
 [![codecov](https://img.shields.io/codecov/c/github/r-xue/pclean?logo=codecov)](https://codecov.io/gh/r-xue/pclean)
+[![docs](https://img.shields.io/readthedocs/pclean?logo=readthedocs&label=docs)](https://pclean.readthedocs.io/)
 
 `pclean` is a modular, Dask-accelerated radio-interferometric imaging package
 that wraps CASA's synthesis imaging C++ tools (`casatools`) to provide
@@ -15,9 +16,11 @@ transparent parallelism for **cube** (channel-distributed) and **continuum**
 | **Cube parallelism** | Channels are distributed across Dask workers; each worker runs a complete imaging and deconvolution cycle on its sub-cube. |
 | **Continuum parallelism** | Visibility rows are partitioned across Dask workers for major-cycle gridding; minor cycles run on the gathered, normalized image. |
 | **tclean-compatible API** | Drop-in `pclean()` function accepting the same parameters as CASA `tclean`. |
+| **Hierarchical config** | Pydantic v2 YAML-based configuration with presets, layered merging, and CASA bridge methods. |
 | **CLI support** | Run imaging from the command line via `python -m pclean`. |
+| **SLURM clusters** | Native Dask-Jobqueue integration for HPC batch scheduling. |
 | **Modular internals** | Every building block — imager, deconvolver, normalizer, partitioner, cluster manager — is independently importable. |
-| **ADIOS2 support** | Convert MeasurementSet columns to `Adios2StMan` with configurable engine type and buffer size for I/O benchmarking. Requires the `casatools` openmpi variant from conda-forge. |
+| **ADIOS2 support** | Convert MeasurementSet columns to `Adios2StMan` for I/O benchmarking. Requires the `casatools` openmpi variant from conda-forge. |
 
 ## Quick start
 
@@ -105,34 +108,8 @@ pclean/
 
 ## Documentation
 
-Design notes and technical references are maintained in [`docs/`](docs/):
-
-### Design and parallelism
-
-| Document | Description |
-|----------|-------------|
-| [code_structure.md](docs/code_structure.md) | Module-level code overview |
-| [parallelization.md](docs/parallelization.md) | Cube vs. continuum parallelization architecture and diagrams |
-| [per_channel_convergence.md](docs/per_channel_convergence.md) | Per-channel convergence strategy |
-| [image_concatenation.md](docs/image_concatenation.md) | Sub-cube concatenation details |
-| [briggsbwtaper.md](docs/briggsbwtaper.md) | `briggsbwtaper` weighting analysis and parallel-mode fix |
-| [memory_estimation.md](docs/memory_estimation.md) | RAM estimation heuristics for worker sizing |
-| [memory_management.md](docs/memory_management.md) | Why Dask memory management is disabled (`memory_limit='0'`) |
-
-### ADIOS2 and I/O
-
-| Document | Description |
-|----------|-------------|
-| [check_adios2.md](docs/check_adios2.md) | Verifying Adios2StMan availability |
-| [adios2_convert.md](docs/adios2_convert.md) | Converting an MS to the ADIOS2 storage backend |
-| [io_consideration.md](docs/io_consideration.md) | I/O bottleneck analysis and ZFS pool considerations |
-| [runner_benchmark.md](docs/runner_benchmark.md) | Lightweight `fio` recipes for storage benchmarking |
-
-### Development
-
-| Document | Description |
-|----------|-------------|
-| [dev_guide.md](docs/dev_guide.md) | Development workflow: pixi environments, linting, testing |
+Full documentation is hosted at
+**[pclean.readthedocs.io](https://pclean.readthedocs.io/)**.
 
 ## Requirements
 
@@ -140,6 +117,7 @@ Design notes and technical references are maintained in [`docs/`](docs/):
 * `casatools` ≥ 6.5
 * `dask` + `distributed`
 * `numpy`
+* `pydantic` ≥ 2.0
 
 ### Pixi environments
 
@@ -220,7 +198,7 @@ distributed via SLURM job arrays that motivated this work
 
 Copyright 2026 the `pclean` authors.
 
-GPL-3.0-or-later — see [LICENSE](LICENSE) for details.
+GPL-3.0-or-later — see [LICENSE](https://github.com/r-xue/pclean/blob/main/LICENSE) for details.
 
 ## Disclaimer
 

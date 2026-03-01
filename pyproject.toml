@@ -39,7 +39,7 @@ authors = [
 Homepage = "https://github.com/r-xue/pclean"
 Repository = "https://github.com/r-xue/pclean"
 Issues = "https://github.com/r-xue/pclean/issues"
-Documentation = "https://github.com/r-xue/pclean/tree/main/docs"
+Documentation = "https://pclean.readthedocs.io/"
 Changelog = "https://github.com/r-xue/pclean/releases"
 
 [project.scripts]
@@ -52,6 +52,12 @@ dev = [
 ]
 slurm = [
     "dask-jobqueue>=0.8",
+]
+docs = [
+    "sphinx>=7.0",
+    "furo",
+    "myst-parser>=2.0",
+    "sphinx-copybutton",
 ]
 
 [tool.setuptools-scm]
@@ -177,6 +183,12 @@ pytest = ">=7"
 pytest-cov = ">=4"
 ruff = ">=0.11"
 
+[tool.pixi.feature.docs.pypi-dependencies]
+sphinx = ">=7.0"
+furo = "*"
+myst-parser = ">=2.0"
+sphinx-copybutton = "*"
+
 [tool.pixi.feature.dev.tasks]
 test = "pytest tests/ -v"
 test-cov = "pytest tests/ -v --cov=pclean --cov-report=term-missing"
@@ -185,8 +197,13 @@ fmt = "ruff format src tests"
 fmt-check = "ruff format src tests --check"
 gen-defaults = "python scripts/gen_defaults_yaml.py"
 
+[tool.pixi.feature.docs.tasks]
+docs-html = "sphinx-build -b html docs docs/_build/html"
+docs-clean = "rm -rf docs/_build"
+
 [tool.pixi.environments]
 default = { features = ["casa"], solve-group = "default" }
 default-forge = { features = ["casa-forge"], solve-group = "forge" }
 dev = { features = ["casa", "dev"], solve-group = "default" }
 test = { features = ["dev"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }

@@ -1,3 +1,6 @@
+# Code Structure
+
+```text
 pclean/
 ├── pyproject.toml
 ├── README.md
@@ -20,10 +23,10 @@ pclean/
 └── tests/
     ├── test_params.py                 — 12 tests (all pass)
     └── test_imager.py                 — 3 tests with mocked casatools (all pass)
+```
 
 
-
-## ### Key Design Decisions
+## Key Design Decisions
 
 | Aspect | Approach |
 | --- | --- |

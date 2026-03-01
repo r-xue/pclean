@@ -27,6 +27,9 @@ build/
 htmlcov/
 .tox/
 
+# Docs build
+docs/_build/
+
 # CASA artifacts
 *.log
 *.last

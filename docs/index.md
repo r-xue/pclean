@@ -1,0 +1,35 @@
+:::{include} ../README.md
+:::
+
+```{toctree}
+:hidden:
+:caption: Guides
+
+dev_guide
+config_current
+update_defaults
+```
+
+```{toctree}
+:hidden:
+:caption: Design & Internals
+
+code_structure
+parallelization
+memory_estimation
+memory_management
+image_concatenation
+per_channel_convergence
+briggsbwtaper
+adios2_convert
+check_adios2
+benchmark_zfs_pools
+```
+
+```{toctree}
+:hidden:
+:caption: API Reference
+
+api/config
+api/pclean
+```
