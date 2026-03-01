@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import copy
 import logging
-import math
 import re
+from typing import TYPE_CHECKING
 
-from pclean.params import PcleanParams
+if TYPE_CHECKING:
+    from pclean.config import PcleanConfig
 
 log = logging.getLogger(__name__)
 
@@ -44,8 +45,10 @@ _QTY_RE = re.compile(r'^([+-]?[\d.eE+-]+)\s*([a-zA-Z/]+)$')
 
 
 def _parse_freq_hz(val: int | float | str) -> float | None:
-    """Parse a frequency quantity string to Hz.  Returns *None* if
-    the value cannot be interpreted as a frequency."""
+    """Parse a frequency quantity string to Hz.
+
+    Returns *None* if the value cannot be interpreted as a frequency.
+    """
     if isinstance(val, (int, float)):
         return None  # bare number = channel index, not a frequency
     val = str(val).strip()
@@ -72,48 +75,55 @@ def _format_freq_ghz(hz: float) -> str:
 
 
 def partition_continuum(
-    params: PcleanParams,
+    config: PcleanConfig,
     nparts: int,
-) -> list[PcleanParams]:
+) -> list[dict]:
     """Partition data by visibility rows for parallel continuum imaging.
 
     Uses ``synthesisutils.contdatapartition()`` to split each MS across
-    *nparts* workers.  Each returned ``PcleanParams`` has selection
-    parameters narrowed to its row chunk and a unique partial image name.
+    *nparts* workers.  Each returned dict is a CASA-native parameter
+    bundle with selection narrowed to its row chunk and a unique partial
+    image name.
 
     Args:
-        params: Original (full) parameter set.
+        config: Full imaging configuration.
         nparts: Number of partitions.
 
     Returns:
-        One ``PcleanParams`` per worker.
+        One CASA-native bundle (dict) per worker.
     """
     ct = _ct()
     su = ct.synthesisutils()
 
+    base_selpars = config.to_casa_selpars()
+
     try:
         partselpars = su.contdatapartition(
-            selpars=params.allselpars,
+            selpars=base_selpars,
             npart=nparts,
         )
     finally:
         su.done()
 
-    result: list[PcleanParams] = []
+    base_bundle = config.to_casa_bundle()
+    result: list[dict] = []
     for part_idx in range(nparts):
+        bundle = copy.deepcopy(base_bundle)
         # contdatapartition returns a nested dict:
         #   {'0': {'ms0': {selpars}, 'ms1': ...}, '1': ...}
         # outer key = partition index, inner keys = 'ms0', 'ms1', ...
         part_key = str(part_idx)
-        sub_sel: dict[str, dict] = {}
-        for ms_key in sorted(params.allselpars.keys()):
+        for ms_key in sorted(base_selpars):
             if part_key in partselpars and ms_key in partselpars[part_key]:
-                sub_sel[ms_key] = partselpars[part_key][ms_key]
-            else:
-                # Fallback — use full selection for this MS
-                sub_sel[ms_key] = copy.deepcopy(params.allselpars[ms_key])
-        sub = params.make_rowchunk_params(sub_sel, str(part_idx))
-        result.append(sub)
+                bundle['allselpars'][ms_key] = partselpars[part_key][ms_key]
+        # Override imagename in all CASA dict groups
+        new_name = f'{config.imagename}.part.{part_idx}'
+        bundle['allimpars']['0']['imagename'] = new_name
+        bundle['allnormpars']['0']['imagename'] = new_name
+        bundle['allgridpars']['0']['imagename'] = new_name
+        if 'allimages' in bundle['iterpars']:
+            bundle['iterpars']['allimages']['0']['imagename'] = new_name
+        result.append(bundle)
 
     log.info('Partitioned continuum data into %d chunks', len(result))
     return result
@@ -125,63 +135,59 @@ def partition_continuum(
 
 
 def partition_cube(
-    params: PcleanParams,
+    config: PcleanConfig,
     nparts: int,
-) -> list[PcleanParams]:
+) -> list[PcleanConfig]:
     """Partition the output cube by frequency channels for parallel cube imaging.
 
     Uses ``synthesisutils.cubedataimagepartition()`` when possible,
     falling back to an even-split heuristic.
 
     Args:
-        params: Original (full) parameter set.
+        config: Full imaging configuration.
         nparts: Number of partitions.
 
     Returns:
-        One ``PcleanParams`` per worker, covering a non-overlapping
+        One ``PcleanConfig`` per worker, covering a non-overlapping
         range of output channels.
     """
-    nchan = _resolve_nchan(params)
+    nchan = config.image.nchan
     if nchan <= 0:
         nchan = 1
 
     # Try the casatools utility first
     try:
-        return _partition_cube_via_su(params, nparts, nchan)
+        return _partition_cube_via_su(config, nparts, nchan)
     except Exception as exc:
         log.debug('synthesisutils cube partition failed (%s); using even-split fallback', exc)
 
-    return _partition_cube_even(params, nparts, nchan)
-
-
-def _resolve_nchan(params: PcleanParams) -> int:
-    """Best-effort determination of the total output channel count."""
-    nchan = params.allimpars['0'].get('nchan', -1)
-    if nchan > 0:
-        return nchan
-    # If nchan == -1 the user wants 'all channels'.  We can't know the
-    # exact number without inspecting the MS, so return a large sentinel
-    # and let the caller clamp later.
-    return -1
+    return _partition_cube_even(config, nparts, nchan)
 
 
 def _partition_cube_via_su(
-    params: PcleanParams,
+    config: PcleanConfig,
     nparts: int,
     nchan: int,
-) -> list[PcleanParams]:
-    csys = params.allimpars['0'].get('csys', {})
+) -> list[PcleanConfig]:
+    """Partition cube using ``synthesisutils.cubedataimagepartition``.
+
+    Requires a coordinate system (csys) to be available in impars,
+    which is typically not the case before imaging starts.
+    """
+    impars = config.to_casa_impars()
+    csys = impars['0'].get('csys', {})
     if not csys:
         raise RuntimeError(
-            'No coordinate system (csys) available in impars; cannot use synthesisutils for cube partitioning'
+            'No coordinate system (csys) available; '
+            'cannot use synthesisutils for cube partitioning'
         )
 
     ct = _ct()
     su = ct.synthesisutils()
+    selpars = config.to_casa_selpars()
     try:
-        # This returns per-partition selpars and impars.
         allpars = su.cubedataimagepartition(
-            selpars=params.allselpars,
+            selpars=selpars,
             incsys=csys,
             npart=nparts,
             nchannel=nchan,
@@ -189,35 +195,19 @@ def _partition_cube_via_su(
     finally:
         su.done()
 
-    result: list[PcleanParams] = []
+    result: list[PcleanConfig] = []
     total_sub_nchan = 0
     for pidx in range(nparts):
-        p = params.clone()
-        # cubedataimagepartition returns a nested dict:
-        #   {'0': {'ms0': {selpars}, 'nchan': N, 'coordsys': ...}, '1': ...}
-        # outer key = partition index, inner keys = 'ms0', 'ms1', ...
         part_key = str(pidx)
-        if part_key in allpars:
-            part_rec = allpars[part_key]
-            for ms_key in sorted(params.allselpars.keys()):
-                if ms_key in part_rec:
-                    p.allselpars[ms_key] = part_rec[ms_key]
-            # Image params (nchan, coordsys) are at the partition level
-            for k, v in part_rec.items():
-                if k.startswith('ms'):
-                    continue  # already handled above
-                p.allimpars['0'][k] = v
-        sub_nc = p.allimpars['0'].get('nchan', nchan)
+        if part_key not in allpars:
+            continue
+        part_rec = allpars[part_key]
+        sub_nc = part_rec.get('nchan', nchan)
+        sub_start = str(part_rec.get('start', pidx))
+        sub = config.make_subcube_config(sub_start, sub_nc, str(pidx))
         total_sub_nchan += sub_nc
-        new_name = f'{params.imagename}.subcube.{pidx}'
-        p.allimpars['0']['imagename'] = new_name
-        p.allnormpars['0']['imagename'] = new_name
-        p.allgridpars['0']['imagename'] = new_name
-        if 'allimages' in p.iterpars:
-            p.iterpars['allimages']['0']['imagename'] = new_name
-        result.append(p)
+        result.append(sub)
 
-    # Validate: total subcube channels must equal original nchan
     if nchan > 0 and total_sub_nchan != nchan:
         raise RuntimeError(
             f'synthesisutils partition produced {total_sub_nchan} total '
@@ -228,10 +218,10 @@ def _partition_cube_via_su(
 
 
 def _partition_cube_even(
-    params: PcleanParams,
+    config: PcleanConfig,
     nparts: int,
     nchan: int,
-) -> list[PcleanParams]:
+) -> list[PcleanConfig]:
     """Simple even partition of channels across *nparts* workers.
 
     When ``start`` and ``width`` are both frequency strings we compute
@@ -244,9 +234,8 @@ def _partition_cube_even(
         nparts = 1
         nchan = -1
 
-    imp = params.allimpars['0']
-    orig_start = imp.get('start', '')
-    orig_width = imp.get('width', '')
+    orig_start = config.image.start
+    orig_width = config.image.width
 
     start_hz = _parse_freq_hz(orig_start)
     width_hz = _parse_freq_hz(orig_width)
@@ -256,7 +245,7 @@ def _partition_cube_even(
     chans_per_base = nchan // nparts
     remainder = nchan % nparts
 
-    result: list[PcleanParams] = []
+    result: list[PcleanConfig] = []
     chan_offset = 0
     for i in range(nparts):
         nc = chans_per_base + (1 if i < remainder else 0)
@@ -264,15 +253,13 @@ def _partition_cube_even(
             break
 
         if start_hz is not None and width_hz is not None:
-            # Frequency-based start for this subcube
             sub_start_hz = start_hz + chan_offset * width_hz
             sub_start = _format_freq_ghz(sub_start_hz)
         else:
-            # Channel-index fallback
             sub_start = str(chan_offset)
 
         log.info('  subcube %d: start=%s  nchan=%d  (chan_offset=%d)', i, sub_start, nc, chan_offset)
-        sub = params.make_subcube_params(sub_start, nc, str(i))
+        sub = config.make_subcube_config(sub_start, nc, str(i))
         result.append(sub)
         chan_offset += nc
 

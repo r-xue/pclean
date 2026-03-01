@@ -17,13 +17,16 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from typing import TYPE_CHECKING
 
-from pclean.params import PcleanParams
+from pclean.imaging.deconvolver import Deconvolver
+from pclean.imaging.normalizer import Normalizer
 from pclean.parallel.cluster import DaskClusterManager
 from pclean.parallel.worker_tasks import _WorkerGridder
-from pclean.imaging.normalizer import Normalizer
-from pclean.imaging.deconvolver import Deconvolver
 from pclean.utils.partition import partition_continuum
+
+if TYPE_CHECKING:
+    from pclean.config import PcleanConfig
 
 log = logging.getLogger(__name__)
 
@@ -43,15 +46,15 @@ class ParallelContinuumImager:
     """Row-parallel continuum (MFS) CLEAN imager.
 
     Args:
-        params: Full parameter set (specmode should be ``'mfs'``).
+        config: Full imaging configuration (specmode should be ``'mfs'``).
         cluster: Running Dask cluster.
     """
 
-    def __init__(self, params: PcleanParams, cluster: DaskClusterManager):
-        self.params = params
+    def __init__(self, config: PcleanConfig, cluster: DaskClusterManager):
+        self.config = config
         self.cluster = cluster
 
-        self._part_params: list[PcleanParams] = []
+        self._part_bundles: list[dict] = []
         self._actors: list = []
         self._normalizer: Normalizer | None = None
         self._deconvolver: Deconvolver | None = None
@@ -84,12 +87,12 @@ class ParallelContinuumImager:
             self._normalizer.normalize_pb()
 
             # Initial residual
-            if self.params.miscpars.get('calcres', True):
+            if self.config.misc.calcres:
                 self._parallel_major_cycle(is_first=True)
                 self._normalizer.post_major_mfs()
 
             # Major / minor loop
-            if self.params.niter > 0:
+            if self.config.niter > 0:
                 converged = self._check_convergence()
                 while not converged:
                     self._deconvolver.setup_mask()
@@ -100,14 +103,13 @@ class ParallelContinuumImager:
                         self._normalizer.post_major_mfs()
                     converged = self._check_convergence() or (not did)
 
-                if self.params.alldecpars['0'].get('restoration', True):
+                if self.config.deconvolution.restoration:
                     self._deconvolver.restore()
-                if self.params.alldecpars['0'].get('pbcor', False):
+                if self.config.deconvolution.pbcor:
                     self._deconvolver.pbcor()
 
             # Clean up partial images unless keep_partimages is set
-            keep = self.params.parallelpars.get('keep_partimages', False)
-            if not keep:
+            if not self.config.cluster.keep_partimages:
                 self._cleanup_partimages()
 
             return self._summary()
@@ -120,17 +122,17 @@ class ParallelContinuumImager:
 
     def _partition_data(self) -> None:
         nworkers = self.cluster.nworkers
-        self._part_params = partition_continuum(self.params, nworkers)
-        log.info('Continuum imaging: %d row-chunks on %d workers', len(self._part_params), nworkers)
+        self._part_bundles = partition_continuum(self.config, nworkers)
+        log.info('Continuum imaging: %d row-chunks on %d workers', len(self._part_bundles), nworkers)
 
     def _create_actors(self) -> None:
         """Create persistent ``_WorkerGridder`` actors on each worker."""
         client = self.cluster.client
         self._actors = []
-        for pp in self._part_params:
+        for bundle in self._part_bundles:
             actor_future = client.submit(
                 _WorkerGridder,
-                pp.to_dict(),
+                bundle,
                 actor=True,
             )
             self._actors.append(actor_future.result())  # blocks until ready
@@ -155,23 +157,23 @@ class ParallelContinuumImager:
     # ------------------------------------------------------------------
 
     def _setup_normalizer(self) -> None:
-        partimagenames = [pp.imagename for pp in self._part_params]
-        normpars = dict(self.params.allnormpars['0'])
+        partimagenames = [b['allimpars']['0']['imagename'] for b in self._part_bundles]
+        normpars = dict(self.config.to_casa_normpars()['0'])
         normpars['partimagenames'] = partimagenames
         self._normalizer = Normalizer(normpars, partimagenames)
         self._normalizer.setup()
 
     def _setup_deconvolver(self) -> None:
         self._deconvolver = Deconvolver(
-            imagename=self.params.imagename,
-            decpars=dict(self.params.alldecpars['0']),
+            imagename=self.config.imagename,
+            decpars=dict(self.config.to_casa_decpars()['0']),
         )
         self._deconvolver.setup()
 
     def _setup_iteration_control(self) -> None:
         ct = _ct()
         self._ib_tool = ct.iterbotsink()
-        self._ib_tool.setupiteration(iterpars=dict(self.params.iterpars))
+        self._ib_tool.setupiteration(iterpars=self.config.to_casa_iterpars())
 
     # ------------------------------------------------------------------
     # Private — parallel major-cycle operations
@@ -215,7 +217,7 @@ class ParallelContinuumImager:
         self._ib_tool.resetminorcycleinfo()
         initrec = self._deconvolver.init_minor()
         self._ib_tool.mergeinitrecord(initrec)
-        nmajor = self.params.iterpars.get('nmajor', -1)
+        nmajor = self.config.iteration.nmajor
         reached = nmajor > 0 and self._major_count >= nmajor
         return self._ib_tool.cleanComplete(reachedMajorLimit=reached)
 
@@ -228,13 +230,13 @@ class ParallelContinuumImager:
 
         Uses a glob on each partial-image prefix so that both
         single-term (``.psf``) and multi-term (``.psf.tt0``,
-        ``.weight.tt2``, …) products are found and removed.
+        ``.weight.tt2``, ...) products are found and removed.
         """
         import glob
 
         removed = 0
-        for pp in self._part_params:
-            abs_name = os.path.abspath(pp.imagename)
+        for bundle in self._part_bundles:
+            abs_name = os.path.abspath(bundle['allimpars']['0']['imagename'])
             for path in glob.glob(f'{abs_name}.*'):
                 if os.path.isdir(path):
                     shutil.rmtree(path, ignore_errors=True)
@@ -251,9 +253,9 @@ class ParallelContinuumImager:
 
     def _summary(self) -> dict:
         return {
-            'imagename': self.params.imagename,
+            'imagename': self.config.imagename,
             'major_cycles': self._major_count,
-            'nparts': len(self._part_params),
+            'nparts': len(self._part_bundles),
         }
 
 

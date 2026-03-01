@@ -1,4 +1,4 @@
-"""CLI entry point for pclean.
+r"""CLI entry point for pclean.
 
 Usage::
 
@@ -6,7 +6,12 @@ Usage::
         --imsize 512 512 --cell 1arcsec --niter 1000 \
         --parallel --nworkers 8
 
+    # Or with a YAML config file:
+    python -m pclean --config pclean_config.yaml --cluster.nworkers 48
+
 All tclean parameters are supported as ``--<name> <value>`` flags.
+When ``--config`` is given, the YAML file provides the base and any
+CLI flags override it.
 """
 
 from __future__ import annotations
@@ -20,6 +25,24 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog='pclean',
         description='Parallel CLEAN imaging with Dask and CASA tools',
+    )
+    # Config file
+    p.add_argument(
+        '--config',
+        default=None,
+        help='Path to a YAML configuration file',
+    )
+    p.add_argument(
+        '--preset',
+        action='append',
+        default=None,
+        help='Named preset(s) to load (repeatable; later presets override earlier ones)',
+    )
+    p.add_argument(
+        '--dump-config',
+        default=None,
+        metavar='PATH',
+        help='Dump the effective (merged) configuration to a YAML file and exit',
     )
     # Data selection
     p.add_argument('--vis', nargs='+', default=[''])
@@ -122,10 +145,67 @@ def main(argv=None):
         format='%(asctime)s %(name)-20s %(levelname)-8s %(message)s',
     )
 
+    config_path = args.config
+    presets = args.preset
+    dump_config = args.dump_config
+
+    # ------------------------------------------------------------------
+    # Config-file path: build from YAML + presets, override with CLI
+    # ------------------------------------------------------------------
+    if config_path is not None or presets is not None:
+        from pclean.config import PcleanConfig, load_preset
+
+        layers: list[PcleanConfig] = []
+        if config_path is not None:
+            layers.append(PcleanConfig.from_yaml(config_path))
+        for name in (presets or []):
+            layers.append(load_preset(name))
+
+        # CLI overrides as a flat-kwargs overlay
+        cli_kwargs = _cli_to_flat_kwargs(args)
+        if cli_kwargs:
+            layers.append(PcleanConfig.from_flat_kwargs(**cli_kwargs))
+
+        cfg = PcleanConfig.merge(*layers) if len(layers) > 1 else layers[0]
+
+        if dump_config:
+            cfg.to_yaml(dump_config)
+            print(f'Config written to {dump_config}')
+            return
+
+        from pclean.pclean import pclean
+        result = pclean(config=cfg)
+        print(json.dumps(result, indent=2, default=str))
+        return
+
+    # ------------------------------------------------------------------
+    # Legacy flat-kwargs path (no --config)
+    # ------------------------------------------------------------------
+    if dump_config:
+        from pclean.config import PcleanConfig
+        cli_kwargs = _cli_to_flat_kwargs(args)
+        vis = cli_kwargs.pop('vis', '')
+        cfg = PcleanConfig.from_flat_kwargs(vis=vis, **cli_kwargs)
+        cfg.to_yaml(dump_config)
+        print(f'Config written to {dump_config}')
+        return
+
     from pclean.pclean import pclean
 
-    kwargs = vars(args)
+    kwargs = _cli_to_flat_kwargs(args)
+    vis = kwargs.pop('vis')
+    result = pclean(vis=vis, **kwargs)
+    print(json.dumps(result, indent=2, default=str))
+
+
+def _cli_to_flat_kwargs(args: argparse.Namespace) -> dict:
+    """Convert parsed CLI args to the flat kwargs dict for ``pclean()``."""
+    kwargs = vars(args).copy()
+    # Remove meta-args
     kwargs.pop('log_level', None)
+    kwargs.pop('config', None)
+    kwargs.pop('preset', None)
+    kwargs.pop('dump_config', None)
     # Normalise CLI names to Python names
     kwargs['scheduler_address'] = kwargs.pop('scheduler_address', None)
     kwargs['threads_per_worker'] = kwargs.pop('threads_per_worker', 1)
@@ -140,11 +220,7 @@ def main(argv=None):
     kwargs['slurm_python'] = kwargs.pop('slurm_python', None)
     kwargs['slurm_local_directory'] = kwargs.pop('slurm_local_directory', None)
     kwargs['slurm_log_directory'] = kwargs.pop('slurm_log_directory', 'logs')
-
-    vis = kwargs.pop('vis')
-    result = pclean(vis=vis, **kwargs)
-
-    print(json.dumps(result, indent=2, default=str))
+    return kwargs
 
 
 if __name__ == '__main__':

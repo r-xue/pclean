@@ -12,14 +12,18 @@ communication during imaging.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import shutil
+from typing import TYPE_CHECKING
 
-from pclean.params import PcleanParams
 from pclean.parallel.cluster import DaskClusterManager
 from pclean.parallel.worker_tasks import run_subcube
-from pclean.utils.partition import partition_cube
 from pclean.utils.image_concat import concat_subcubes
+from pclean.utils.partition import partition_cube
+
+if TYPE_CHECKING:
+    from pclean.config import PcleanConfig
 
 log = logging.getLogger(__name__)
 
@@ -28,14 +32,14 @@ class ParallelCubeImager:
     """Channel-parallel cube CLEAN imager.
 
     Args:
-        params: Full parameter set (specmode must be cube/cubedata/cubesource).
+        config: Full imaging configuration (specmode must be cube/cubedata/cubesource).
         cluster: Running Dask cluster.
     """
 
-    def __init__(self, params: PcleanParams, cluster: DaskClusterManager):
-        self.params = params
+    def __init__(self, config: PcleanConfig, cluster: DaskClusterManager):
+        self.config = config
         self.cluster = cluster
-        self._subcube_params: list[PcleanParams] = []
+        self._subcube_configs: list[PcleanConfig] = []
 
     # ------------------------------------------------------------------
     # Public
@@ -54,8 +58,8 @@ class ParallelCubeImager:
         nparts = self._compute_nparts(nworkers)
 
         # 2. Partition channels
-        self._subcube_params = partition_cube(self.params, nparts)
-        nparts = len(self._subcube_params)  # may differ slightly due to rounding
+        self._subcube_configs = partition_cube(self.config, nparts)
+        nparts = len(self._subcube_configs)  # may differ slightly due to rounding
         log.info('Cube imaging: %d sub-cubes on %d workers', nparts, nworkers)
 
         # 3. Submit sub-cubes with bounded concurrency.
@@ -66,14 +70,18 @@ class ParallelCubeImager:
         from dask.distributed import as_completed
 
         summaries: list[dict | None] = [None] * nparts
-        # Map future → index so we can preserve ordering.
+        # Map future -> index so we can preserve ordering.
         future_to_idx: dict = {}
         pending: list = []
 
         # Seed the initial batch (up to nworkers tasks).
         batch_end = min(nworkers, nparts)
         for i in range(batch_end):
-            f = client.submit(run_subcube, self._subcube_params[i].to_dict(), pure=False)
+            f = client.submit(
+                run_subcube,
+                self._subcube_configs[i].model_dump(mode='python'),
+                pure=False,
+            )
             future_to_idx[f] = i
             pending.append(f)
 
@@ -86,7 +94,11 @@ class ParallelCubeImager:
 
             # Submit the next subcube (if any) to keep the pipeline full.
             if next_idx < nparts:
-                f = client.submit(run_subcube, self._subcube_params[next_idx].to_dict(), pure=False)
+                f = client.submit(
+                    run_subcube,
+                    self._subcube_configs[next_idx].model_dump(mode='python'),
+                    pure=False,
+                )
                 future_to_idx[f] = next_idx
                 ac.add(f)
                 next_idx += 1
@@ -96,16 +108,15 @@ class ParallelCubeImager:
         # 5. Concatenate sub-cube images into final output
         # Workers write images using absolute paths, so we must use
         # the same absolute base name when looking for sub-cube products.
-        abs_imgname = os.path.abspath(self.params.imagename)
+        abs_imgname = os.path.abspath(self.config.imagename)
         concat_subcubes(abs_imgname, nparts)
 
         # 6. Clean up subcube artifacts unless keep_subcubes is set
-        keep = self.params.parallelpars.get('keep_subcubes', False)
-        if not keep:
+        if not self.config.cluster.keep_subcubes:
             self._cleanup_subcubes(abs_imgname, nparts)
 
         return {
-            'imagename': self.params.imagename,
+            'imagename': self.config.imagename,
             'subcube_summaries': summaries,
             'nparts': nparts,
         }
@@ -144,19 +155,17 @@ class ParallelCubeImager:
     def _compute_nparts(self, nworkers: int) -> int:
         """Compute the number of subcube partitions from *cube_chunksize*.
 
-        * ``cube_chunksize = -1``  → one subcube per worker (default)
-        * ``cube_chunksize = 1``   → one subcube per channel (max load balance)
-        * ``cube_chunksize = N``   → ceil(nchan / N) subcubes
+        * ``cube_chunksize = -1``  -> one subcube per worker (default)
+        * ``cube_chunksize = 1``   -> one subcube per channel (max load balance)
+        * ``cube_chunksize = N``   -> ceil(nchan / N) subcubes
         """
-        chunksize = self.params.parallelpars.get('cube_chunksize', -1)
+        chunksize = self.config.cluster.cube_chunksize
         if chunksize <= 0:
             return nworkers
 
-        nchan = self.params.allimpars['0'].get('nchan', -1)
+        nchan = self.config.image.nchan
         if nchan <= 0:
             nchan = 1
-
-        import math
 
         nparts = math.ceil(nchan / chunksize)
         return max(nparts, 1)

@@ -7,7 +7,7 @@ by the Dask-parallel engines.
 
 Public API::
 
-    SerialImager(params)
+    SerialImager(config)
     .setup()           -- wires up all C++ tools
     .make_psf()        -- compute PSF
     .make_pb()         -- compute primary beam
@@ -25,8 +25,10 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from typing import TYPE_CHECKING
 
-from pclean.params import PcleanParams
+if TYPE_CHECKING:
+    from pclean.config import PcleanConfig
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class SerialImager:
     """Single-process CLEAN imaging pipeline.
 
     Args:
-        params: Validated parameter set.
+        config: Validated hierarchical configuration.
         init_iter_control: Whether to create an ``iterbotsink`` tool.  Set
             to ``False`` when this imager is driven externally (e.g. by a
             Dask coordinator that manages convergence itself).
@@ -58,11 +60,21 @@ class SerialImager:
 
     def __init__(
         self,
-        params: PcleanParams,
+        config: PcleanConfig,
         init_iter_control: bool = True,
     ):
-        self.params = params
+        self.config = config
         self._init_iter = init_iter_control
+
+        # Pre-compute CASA-native dicts from config
+        self._selpars = config.to_casa_selpars()
+        self._impars = config.to_casa_impars()
+        self._gridpars = config.to_casa_gridpars()
+        self._weightpars = config.to_casa_weightpars()
+        self._decpars = config.to_casa_decpars()
+        self._normpars = config.to_casa_normpars()
+        self._iterpars = config.to_casa_iterpars()
+        self._miscpars = config.to_casa_miscpars()
 
         # C++ tool handles (created in setup())
         self.si_tool = None  # synthesisimager
@@ -82,7 +94,7 @@ class SerialImager:
         self._init_imager()
         self._init_normalizers()
         self._set_weighting()
-        if self.params.niter > 0:
+        if self.config.niter > 0:
             self._init_deconvolvers()
         if self._init_iter:
             self._init_iteration_control()
@@ -224,11 +236,11 @@ class SerialImager:
             self.make_pb()
 
             # Initial residual (dirty image)
-            if self.params.miscpars.get('calcres', True):
+            if self._miscpars.get('calcres', True):
                 self.run_major_cycle(is_first=True)
 
-            if self.params.niter > 0:
-                nmajor = self.params.iterpars.get('nmajor', -1)
+            if self.config.niter > 0:
+                nmajor = self.config.iteration.nmajor
                 # CASA order: hasConverged (initminorcycle) → updateMask
                 # (setupmask) → hasConverged (re-check after mask)
                 converged = self.has_converged(nmajor)
@@ -241,9 +253,9 @@ class SerialImager:
                     self.update_mask()
                     converged = self.has_converged(nmajor) or (not did)
 
-                if self.params.alldecpars['0'].get('restoration', True):
+                if self.config.deconvolution.restoration:
                     self.restore()
-                if self.params.alldecpars['0'].get('pbcor', False):
+                if self.config.deconvolution.pbcor:
                     self.pbcor()
 
             return self._summary()
@@ -256,7 +268,7 @@ class SerialImager:
 
     @property
     def _is_mfs(self) -> bool:
-        return self.params.specmode == 'mfs'
+        return self.config.is_mfs
 
     # -- tool initialization -------------------------------------------
 
@@ -265,35 +277,35 @@ class SerialImager:
         self.si_tool = ct.synthesisimager()
 
         # Select data from each MS
-        for ms_key in sorted(self.params.allselpars.keys()):
-            selrec = dict(self.params.allselpars[ms_key])
+        for ms_key in sorted(self._selpars.keys()):
+            selrec = dict(self._selpars[ms_key])
             self.si_tool.selectdata(selpars=selrec)
 
         # Define images for each field
-        for fld in sorted(self.params.allimpars.keys()):
+        for fld in sorted(self._impars.keys()):
             self.si_tool.defineimage(
-                impars=dict(self.params.allimpars[fld]),
-                gridpars=dict(self.params.allgridpars[fld]),
+                impars=dict(self._impars[fld]),
+                gridpars=dict(self._gridpars[fld]),
             )
 
         # Tell the imager about normalizer params so it creates the
         # correct image products on disk (e.g. .tt0/.tt1 for mtmfs).
-        self.si_tool.normalizerinfo(dict(self.params.allnormpars['0']))
+        self.si_tool.normalizerinfo(dict(self._normpars['0']))
 
     def _init_deconvolvers(self) -> None:
         ct = _ct()
-        for fld in sorted(self.params.alldecpars.keys()):
+        for fld in sorted(self._decpars.keys()):
             sd = ct.synthesisdeconvolver()
-            decpars = dict(self.params.alldecpars[fld])
-            decpars['imagename'] = self.params.allimpars[fld]['imagename']
+            decpars = dict(self._decpars[fld])
+            decpars['imagename'] = self._impars[fld]['imagename']
             sd.setupdeconvolution(decpars=decpars)
             self.sd_tools[fld] = sd
 
     def _init_normalizers(self) -> None:
         ct = _ct()
-        for fld in sorted(self.params.allnormpars.keys()):
+        for fld in sorted(self._normpars.keys()):
             sn = ct.synthesisnormalizer()
-            sn.setupnormalizer(normpars=dict(self.params.allnormpars[fld]))
+            sn.setupnormalizer(normpars=dict(self._normpars[fld]))
             self.sn_tools[fld] = sn
 
     def _set_weighting(self) -> None:
@@ -309,13 +321,13 @@ class SerialImager:
             'usecubebriggs',
             'uvtaper',
         }
-        wp = {k: v for k, v in self.params.weightpars.items() if k in _WEIGHT_KEYS}
+        wp = {k: v for k, v in self._weightpars.items() if k in _WEIGHT_KEYS}
         self.si_tool.setweighting(**wp)
 
     def _init_iteration_control(self) -> None:
         ct = _ct()
         self.ib_tool = ct.iterbotsink()
-        self.ib_tool.setupiteration(iterpars=dict(self.params.iterpars))
+        self.ib_tool.setupiteration(iterpars=dict(self._iterpars))
 
     # -- normalization helpers -----------------------------------------
 
@@ -337,8 +349,8 @@ class SerialImager:
         stale entry (casacore's ``SetupNewTable`` only blocks when
         the path physically exists AND is in the cache).
         """
-        imagename = self.params.allimpars['0']['imagename']
-        nterms = self.params.alldecpars.get('0', {}).get('nterms', 1)
+        imagename = self._impars['0']['imagename']
+        nterms = self._decpars.get('0', {}).get('nterms', 1)
         extensions = ['.residual']
         if nterms > 1:
             extensions = [f'.residual.tt{t}' for t in range(nterms)]
@@ -384,5 +396,5 @@ class SerialImager:
         return {
             'converged': self._converged,
             'major_cycles': self._major_count,
-            'imagename': self.params.imagename,
+            'imagename': self.config.imagename,
         }

@@ -20,13 +20,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
-from pclean.params import PcleanParams
+from pclean.config import PcleanConfig
 
 log = logging.getLogger(__name__)
 
 
 def pclean(
+    # --- Config overlay ------------------------------------------------
+    config: PcleanConfig | str | Path | None = None,
     # --- Data selection ------------------------------------------------
     vis: str | Sequence[str] = '',
     selectdata: bool = True,
@@ -175,12 +179,16 @@ def pclean(
       produced by each worker during continuum (MFS) imaging.
       Default ``False`` removes them after gathering.
 
+    * **config** -- a :class:`~pclean.config.PcleanConfig` instance, a
+      path to a YAML config file, or ``None``.  When provided, the
+      hierarchical config is used as the base and any explicit keyword
+      arguments override it.
+
     Returns:
         Imaging summary (convergence, major-cycle count, image names).
     """
-
-    # Collect all explicit arguments into a kwargs dict for PcleanParams
-    kwargs = dict(
+    # ---- Build PcleanConfig from flat kwargs -------------------------
+    kwargs: dict[str, Any] = dict(
         field=field,
         spw=spw,
         timerange=timerange,
@@ -291,122 +299,97 @@ def pclean(
         slurm_job_script_prologue=slurm_job_script_prologue,
     )
 
-    params = PcleanParams(vis=vis, **kwargs)
+    flat_cfg = PcleanConfig.from_flat_kwargs(vis=vis, **kwargs)
 
-    # ---- dispatch to the right engine --------------------------------
-    if not params.parallel:
-        return _run_serial(params)
-    elif params.is_cube:
-        return _run_parallel_cube(params)
+    # ---- If a config file/object was provided, use it as the base ----
+    if config is not None:
+        if isinstance(config, (str, Path)):
+            base_cfg = PcleanConfig.from_yaml(config)
+        else:
+            base_cfg = config
+        # Merge: base from file, explicit kwargs override (non-defaults)
+        cfg = PcleanConfig.merge(base_cfg, flat_cfg)
     else:
-        return _run_parallel_continuum(params)
+        cfg = flat_cfg
+
+    # ---- Dispatch to the right engine --------------------------------
+    return _dispatch(cfg)
 
 
 # ======================================================================
-# Dispatch helpers
+# Dispatch + engine wiring
 # ======================================================================
 
 
-def _run_serial(params: PcleanParams) -> dict:
+def _dispatch(config: PcleanConfig) -> dict:
+    """Route to serial, cube-parallel, or continuum-parallel engine."""
+    if not config.parallel:
+        return _run_serial(config)
+    elif config.is_cube:
+        return _run_parallel_cube(config)
+    else:
+        return _run_parallel_continuum(config)
+
+
+def _run_serial(config: PcleanConfig) -> dict:
     from pclean.imaging.serial_imager import SerialImager
 
-    log.info('Running serial imaging (specmode=%s)', params.specmode)
-    imager = SerialImager(params)
+    log.info('Running serial imaging (specmode=%s)', config.specmode)
+    imager = SerialImager(config)
     return imager.run()
 
 
-def _run_parallel_cube(params: PcleanParams) -> dict:
+def _run_parallel_cube(config: PcleanConfig) -> dict:
     from pclean.parallel.cluster import DaskClusterManager
     from pclean.parallel.cube_parallel import ParallelCubeImager
 
-    pp = params.parallelpars
-    log.info('Running parallel cube imaging (nworkers=%s)', pp.get('nworkers'))
+    log.info('Running parallel cube imaging (nworkers=%s)', config.cluster.nworkers)
 
-    with DaskClusterManager(**_cluster_kwargs(pp)) as cluster:
-        engine = ParallelCubeImager(params, cluster)
+    with DaskClusterManager(**_cluster_kwargs(config)) as cluster:
+        engine = ParallelCubeImager(config, cluster)
         return engine.run()
 
 
-def _run_parallel_continuum(params: PcleanParams) -> dict:
+def _run_parallel_continuum(config: PcleanConfig) -> dict:
     from pclean.parallel.cluster import DaskClusterManager
     from pclean.parallel.continuum_parallel import ParallelContinuumImager
 
-    pp = params.parallelpars
-    log.info('Running parallel continuum imaging (nworkers=%s)', pp.get('nworkers'))
+    log.info('Running parallel continuum imaging (nworkers=%s)', config.cluster.nworkers)
 
-    with DaskClusterManager(**_cluster_kwargs(pp)) as cluster:
-        engine = ParallelContinuumImager(params, cluster)
+    with DaskClusterManager(**_cluster_kwargs(config)) as cluster:
+        engine = ParallelContinuumImager(config, cluster)
         return engine.run()
 
 
-def _cluster_kwargs(pp: dict) -> dict:
-    """Build ``DaskClusterManager`` keyword arguments from parallel parameters.
+def _cluster_kwargs(config: PcleanConfig) -> dict:
+    """Build ``DaskClusterManager`` keyword arguments from ``PcleanConfig``.
 
-    This helper adapts a dictionary of parallel/cluster configuration values,
-    typically ``PcleanParams.parallelpars``, into a dictionary that can be
-    passed directly to :class:`pclean.parallel.cluster.DaskClusterManager`
-    using keyword argument expansion.
-
-    The input dictionary is expected to contain items that describe how the
-    Dask cluster should be created or connected to. Only a subset of keys is
-    inspected; unknown keys in ``pp`` are ignored. For inspected keys, this
-    function uses ``dict.get`` to read values and applies sensible defaults
-    when no value is provided.
-
-    Recognized keys include:
-
-    * ``nworkers``: Number of Dask workers to start or expect.
-    * ``scheduler_address``: Address of an existing Dask scheduler to connect
-      to instead of creating a new local cluster.
-    * ``threads_per_worker``: Number of threads per worker. Defaults to ``1``.
-    * ``memory_limit``: Per-worker memory limit. Defaults to ``'0'`` (no
-      explicit limit).
-    * ``local_directory``: Local directory for Dask worker scratch space.
-    * ``cluster_type``: Cluster backend type, for example ``'local'`` or a
-      batch-system-backed type. Defaults to ``'local'``.
-    * ``slurm_queue``: SLURM partition/queue name for batch workers.
-    * ``slurm_account``: SLURM account to charge for jobs.
-    * ``slurm_walltime``: Requested wall-clock time per job. Defaults to
-      ``'04:00:00'``.
-    * ``slurm_job_mem``: Memory requested per SLURM job. Defaults to
-      ``'20GB'``.
-    * ``slurm_cores_per_job``: Number of cores requested per SLURM job.
-      Defaults to ``1``.
-    * ``slurm_job_extra_directives``: Additional raw SLURM directives to
-      inject into the job script.
-    * ``slurm_python``: Python executable to use inside SLURM jobs.
-    * ``slurm_local_directory``: Local scratch directory path on SLURM
-      compute nodes.
-    * ``slurm_log_directory``: Directory for SLURM job log files. Defaults to
-      ``'logs'``.
-    * ``slurm_job_script_prologue``: Shell commands to prepend to the SLURM
-      job script before starting the worker.
+    Extracts cluster and SLURM configuration directly from the config
+    object instead of reading from a flat ``parallelpars`` dict.
 
     Args:
-        pp: Dictionary of parallel parameters from which cluster configuration
-            should be extracted. Typically this is
-            ``PcleanParams.parallelpars``.
+        config: The active imaging configuration.
 
     Returns:
-        A dictionary containing only the cluster-related configuration keys
-        and their values (or defaults) suitable for passing to
-        ``DaskClusterManager`` via keyword expansion.
+        Kwargs dict suitable for ``DaskClusterManager(**...)``..
     """
+    c = config.cluster
+    s = c.slurm
     return dict(
-        nworkers=pp.get('nworkers'),
-        scheduler_address=pp.get('scheduler_address'),
-        threads_per_worker=pp.get('threads_per_worker', 1),
-        memory_limit=pp.get('memory_limit', '0'),
-        local_directory=pp.get('local_directory'),
-        cluster_type=pp.get('cluster_type', 'local'),
-        slurm_queue=pp.get('slurm_queue'),
-        slurm_account=pp.get('slurm_account'),
-        slurm_walltime=pp.get('slurm_walltime', '04:00:00'),
-        slurm_job_mem=pp.get('slurm_job_mem', '20GB'),
-        slurm_cores_per_job=pp.get('slurm_cores_per_job', 1),
-        slurm_job_extra_directives=pp.get('slurm_job_extra_directives'),
-        slurm_python=pp.get('slurm_python'),
-        slurm_local_directory=pp.get('slurm_local_directory'),
-        slurm_log_directory=pp.get('slurm_log_directory', 'logs'),
-        slurm_job_script_prologue=pp.get('slurm_job_script_prologue'),
+        nworkers=c.nworkers,
+        scheduler_address=c.scheduler_address,
+        threads_per_worker=c.threads_per_worker,
+        memory_limit=c.memory_limit,
+        local_directory=c.local_directory,
+        cluster_type=c.type,
+        slurm_queue=s.queue,
+        slurm_account=s.account,
+        slurm_walltime=s.walltime,
+        slurm_job_mem=s.job_mem,
+        slurm_cores_per_job=s.cores_per_job,
+        slurm_job_extra_directives=s.job_extra_directives or None,
+        slurm_python=s.python,
+        slurm_local_directory=s.local_directory,
+        slurm_log_directory=s.log_directory,
+        slurm_job_script_prologue=s.job_script_prologue or None,
     )

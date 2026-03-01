@@ -27,6 +27,8 @@ dependencies = [
     "dask",
     "distributed",
     "numpy",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
 ]
 keywords = ["astronomy", "pipeline", "ALMA", "VLA", "radio-astronomy", "CASA", "imaging"]
 authors = [

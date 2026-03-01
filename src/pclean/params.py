@@ -1,13 +1,15 @@
 """Parameter container and validation for pclean.
 
-Mirrors CASA's ``ImagerParameters`` but adds Dask-specific options and
-exposes each parameter group as a plain dict for easy serialisation to
-Dask workers.
+.. deprecated::
+    ``PcleanParams`` is deprecated. Use :class:`pclean.config.PcleanConfig`
+    with its ``to_casa_*()`` bridge methods instead. This module is retained
+    only for backward compatibility and will be removed in a future release.
 """
 
 from __future__ import annotations
 
 import copy
+import warnings
 from collections.abc import Sequence
 
 # ---------------------------------------------------------------------------
@@ -224,6 +226,12 @@ class PcleanParams:
     """
 
     def __init__(self, vis: str | Sequence[str] = '', **kwargs):
+        warnings.warn(
+            'PcleanParams is deprecated; use pclean.config.PcleanConfig '
+            'with its to_casa_*() bridge methods instead.',
+            DeprecationWarning,
+            stacklevel=2,
+        )
         vis = _ensure_list(vis) if vis else ['']
 
         # ---- selection (one dict per MS, keyed as 'ms0', 'ms1', ...) -----
@@ -449,8 +457,10 @@ class PcleanParams:
         partition_selpars: dict,
         image_suffix: str,
     ) -> PcleanParams:
-        """Return a copy with selection pars limited to a row chunk
-        (continuum parallelism)."""
+        """Return a copy with selection pars limited to a row chunk.
+
+        Used for continuum parallelism.
+        """
         p = self.clone()
         p.allselpars = copy.deepcopy(partition_selpars)
         imp = p.allimpars['0']
