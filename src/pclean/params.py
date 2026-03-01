@@ -163,6 +163,19 @@ _DEFAULT_PARALLEL = dict(
     cube_chunksize=-1,  # -1: nparts=nworkers, 1: one channel per task, N: N channels per task
     keep_subcubes=False,  # retain per-worker subcube images after concatenation
     keep_partimages=False,  # retain partial images after continuum gather
+    # Cluster backend selection
+    cluster_type='local',  # 'local' | 'slurm' | 'address'
+    # SLURM-specific (only used when cluster_type='slurm')
+    slurm_queue=None,  # SLURM partition name (--partition)
+    slurm_account=None,  # SLURM account (--account)
+    slurm_walltime='04:00:00',  # per-job wall time (--time)
+    slurm_job_mem='20GB',  # per-job memory (--mem)
+    slurm_cores_per_job=1,  # CPUs per SLURM job (--cpus-per-task)
+    slurm_job_extra_directives=None,  # list[str] of extra #SBATCH lines
+    slurm_python=None,  # Python executable path on compute nodes
+    slurm_local_directory=None,  # worker scratch dir on compute nodes
+    slurm_log_directory='logs',  # SLURM stdout/stderr log directory
+    slurm_job_script_prologue=None,  # list[str] of shell commands before worker start
 )
 
 _ALLOW_BRIGGS_BW_TAPER = True

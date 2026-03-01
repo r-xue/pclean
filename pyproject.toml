@@ -48,6 +48,9 @@ dev = [
     "pytest",
     "pytest-cov",
 ]
+slurm = [
+    "dask-jobqueue>=0.8",
+]
 
 [tool.setuptools-scm]
 root = "."

@@ -137,6 +137,19 @@ def pclean(
     cube_chunksize: int = -1,
     keep_subcubes: bool = False,
     keep_partimages: bool = False,
+    # Cluster backend
+    cluster_type: str = 'local',
+    # SLURM options (cluster_type='slurm')
+    slurm_queue: str | None = None,
+    slurm_account: str | None = None,
+    slurm_walltime: str = '04:00:00',
+    slurm_job_mem: str = '20GB',
+    slurm_cores_per_job: int = 1,
+    slurm_job_extra_directives: list[str] | None = None,
+    slurm_python: str | None = None,
+    slurm_local_directory: str | None = None,
+    slurm_log_directory: str = 'logs',
+    slurm_job_script_prologue: list[str] | None = None,
 ) -> dict:
     """Parallel CLEAN imaging -- tclean-compatible interface.
 
@@ -265,6 +278,17 @@ def pclean(
         cube_chunksize=cube_chunksize,
         keep_subcubes=keep_subcubes,
         keep_partimages=keep_partimages,
+        cluster_type=cluster_type,
+        slurm_queue=slurm_queue,
+        slurm_account=slurm_account,
+        slurm_walltime=slurm_walltime,
+        slurm_job_mem=slurm_job_mem,
+        slurm_cores_per_job=slurm_cores_per_job,
+        slurm_job_extra_directives=slurm_job_extra_directives,
+        slurm_python=slurm_python,
+        slurm_local_directory=slurm_local_directory,
+        slurm_log_directory=slurm_log_directory,
+        slurm_job_script_prologue=slurm_job_script_prologue,
     )
 
     params = PcleanParams(vis=vis, **kwargs)
@@ -298,13 +322,7 @@ def _run_parallel_cube(params: PcleanParams) -> dict:
     pp = params.parallelpars
     log.info('Running parallel cube imaging (nworkers=%s)', pp.get('nworkers'))
 
-    with DaskClusterManager(
-        nworkers=pp.get('nworkers'),
-        scheduler_address=pp.get('scheduler_address'),
-        threads_per_worker=pp.get('threads_per_worker', 1),
-        memory_limit=pp.get('memory_limit', '0'),
-        local_directory=pp.get('local_directory'),
-    ) as cluster:
+    with DaskClusterManager(**_cluster_kwargs(pp)) as cluster:
         engine = ParallelCubeImager(params, cluster)
         return engine.run()
 
@@ -316,12 +334,79 @@ def _run_parallel_continuum(params: PcleanParams) -> dict:
     pp = params.parallelpars
     log.info('Running parallel continuum imaging (nworkers=%s)', pp.get('nworkers'))
 
-    with DaskClusterManager(
+    with DaskClusterManager(**_cluster_kwargs(pp)) as cluster:
+        engine = ParallelContinuumImager(params, cluster)
+        return engine.run()
+
+
+def _cluster_kwargs(pp: dict) -> dict:
+    """Build ``DaskClusterManager`` keyword arguments from parallel parameters.
+
+    This helper adapts a dictionary of parallel/cluster configuration values,
+    typically ``PcleanParams.parallelpars``, into a dictionary that can be
+    passed directly to :class:`pclean.parallel.cluster.DaskClusterManager`
+    using keyword argument expansion.
+
+    The input dictionary is expected to contain items that describe how the
+    Dask cluster should be created or connected to. Only a subset of keys is
+    inspected; unknown keys in ``pp`` are ignored. For inspected keys, this
+    function uses ``dict.get`` to read values and applies sensible defaults
+    when no value is provided.
+
+    Recognized keys include:
+
+    * ``nworkers``: Number of Dask workers to start or expect.
+    * ``scheduler_address``: Address of an existing Dask scheduler to connect
+      to instead of creating a new local cluster.
+    * ``threads_per_worker``: Number of threads per worker. Defaults to ``1``.
+    * ``memory_limit``: Per-worker memory limit. Defaults to ``'0'`` (no
+      explicit limit).
+    * ``local_directory``: Local directory for Dask worker scratch space.
+    * ``cluster_type``: Cluster backend type, for example ``'local'`` or a
+      batch-system-backed type. Defaults to ``'local'``.
+    * ``slurm_queue``: SLURM partition/queue name for batch workers.
+    * ``slurm_account``: SLURM account to charge for jobs.
+    * ``slurm_walltime``: Requested wall-clock time per job. Defaults to
+      ``'04:00:00'``.
+    * ``slurm_job_mem``: Memory requested per SLURM job. Defaults to
+      ``'20GB'``.
+    * ``slurm_cores_per_job``: Number of cores requested per SLURM job.
+      Defaults to ``1``.
+    * ``slurm_job_extra_directives``: Additional raw SLURM directives to
+      inject into the job script.
+    * ``slurm_python``: Python executable to use inside SLURM jobs.
+    * ``slurm_local_directory``: Local scratch directory path on SLURM
+      compute nodes.
+    * ``slurm_log_directory``: Directory for SLURM job log files. Defaults to
+      ``'logs'``.
+    * ``slurm_job_script_prologue``: Shell commands to prepend to the SLURM
+      job script before starting the worker.
+
+    Args:
+        pp: Dictionary of parallel parameters from which cluster configuration
+            should be extracted. Typically this is
+            ``PcleanParams.parallelpars``.
+
+    Returns:
+        A dictionary containing only the cluster-related configuration keys
+        and their values (or defaults) suitable for passing to
+        ``DaskClusterManager`` via keyword expansion.
+    """
+    return dict(
         nworkers=pp.get('nworkers'),
         scheduler_address=pp.get('scheduler_address'),
         threads_per_worker=pp.get('threads_per_worker', 1),
         memory_limit=pp.get('memory_limit', '0'),
         local_directory=pp.get('local_directory'),
-    ) as cluster:
-        engine = ParallelContinuumImager(params, cluster)
-        return engine.run()
+        cluster_type=pp.get('cluster_type', 'local'),
+        slurm_queue=pp.get('slurm_queue'),
+        slurm_account=pp.get('slurm_account'),
+        slurm_walltime=pp.get('slurm_walltime', '04:00:00'),
+        slurm_job_mem=pp.get('slurm_job_mem', '20GB'),
+        slurm_cores_per_job=pp.get('slurm_cores_per_job', 1),
+        slurm_job_extra_directives=pp.get('slurm_job_extra_directives'),
+        slurm_python=pp.get('slurm_python'),
+        slurm_local_directory=pp.get('slurm_local_directory'),
+        slurm_log_directory=pp.get('slurm_log_directory', 'logs'),
+        slurm_job_script_prologue=pp.get('slurm_job_script_prologue'),
+    )

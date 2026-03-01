@@ -86,6 +86,22 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument('--threads-per-worker', type=int, default=1)
     p.add_argument('--memory-limit', default='auto')
     p.add_argument('--local-directory', default=None)
+    # Cluster backend
+    p.add_argument(
+        '--cluster-type',
+        default='local',
+        choices=['local', 'slurm', 'address'],
+        help='Dask cluster backend (default: local)',
+    )
+    # SLURM options (only used with --cluster-type slurm)
+    p.add_argument('--slurm-queue', default=None, help='SLURM partition name')
+    p.add_argument('--slurm-account', default=None, help='SLURM account')
+    p.add_argument('--slurm-walltime', default='04:00:00', help='Per-job wall time')
+    p.add_argument('--slurm-job-mem', default='20GB', help='Per-job memory')
+    p.add_argument('--slurm-cores-per-job', type=int, default=1, help='CPUs per SLURM job')
+    p.add_argument('--slurm-python', default=None, help='Python path on compute nodes')
+    p.add_argument('--slurm-local-directory', default=None, help='Worker scratch dir')
+    p.add_argument('--slurm-log-directory', default='logs', help='SLURM log directory')
     # Logging
     p.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'])
     return p
@@ -115,6 +131,15 @@ def main(argv=None):
     kwargs['threads_per_worker'] = kwargs.pop('threads_per_worker', 1)
     kwargs['memory_limit'] = kwargs.pop('memory_limit', '0')
     kwargs['local_directory'] = kwargs.pop('local_directory', None)
+    kwargs['cluster_type'] = kwargs.pop('cluster_type', 'local')
+    kwargs['slurm_queue'] = kwargs.pop('slurm_queue', None)
+    kwargs['slurm_account'] = kwargs.pop('slurm_account', None)
+    kwargs['slurm_walltime'] = kwargs.pop('slurm_walltime', '04:00:00')
+    kwargs['slurm_job_mem'] = kwargs.pop('slurm_job_mem', '20GB')
+    kwargs['slurm_cores_per_job'] = kwargs.pop('slurm_cores_per_job', 1)
+    kwargs['slurm_python'] = kwargs.pop('slurm_python', None)
+    kwargs['slurm_local_directory'] = kwargs.pop('slurm_local_directory', None)
+    kwargs['slurm_log_directory'] = kwargs.pop('slurm_log_directory', 'logs')
 
     vis = kwargs.pop('vis')
     result = pclean(vis=vis, **kwargs)
