@@ -26,7 +26,7 @@ Keep subcubes but track convergence per-channel within each subcube. Major cycle
 
 ## Recommendation
 
-Option A is the practical win. The MS read overhead per channel is small (the data is the same, just different gridding planes), and Dask's scheduler gives you automatic load balancing. The current code already supports this — you just need to control `nparts`:
+Option A is the practical win. The MS read overhead per channel is small (the data is the same, just different gridding planes), and Dask's scheduler provides automatic load balancing. The current code already supports this — one only needs to control `nparts`:
 
 ```python
 # Instead of nparts = nworkers (5), use nparts = nchan (117)

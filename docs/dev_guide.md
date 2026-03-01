@@ -64,7 +64,7 @@ pixi run -e dev lint
 ```
 
 Executes `ruff check src tests`. Runs ruff's linter over all source and test
-files. Violations are printed but **not** auto-fixed -- you decide what to
+files. Violations are printed but **not** auto-fixed -- review each finding
 change. The enabled rule sets (configured in `[tool.ruff.lint]`) include:
 
 | Rule set | Description |

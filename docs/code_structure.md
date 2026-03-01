@@ -36,4 +36,4 @@ pclean/
 
 ---
 
-Would you like me to help you draft a technical explanation for any of these specific parallelism strategies?
+See the individual module docstrings for detailed explanations of each parallelism strategy.
