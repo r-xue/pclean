@@ -1,0 +1,135 @@
+# pclean default configuration  (AUTO-GENERATED)
+#
+# This file is produced by  scripts/gen_defaults_yaml.py
+# Do NOT edit manually — change the pydantic defaults in
+# src/pclean/config.py and re-run:
+#
+#   pixi run -e dev gen-defaults
+#
+# All values shown here match the built-in defaults.
+# Copy this file and modify only the fields you need.
+
+selection:
+  vis: ''
+  field: ''
+  spw: ''
+  timerange: ''
+  uvrange: ''
+  antenna: ''
+  scan: ''
+  observation: ''
+  intent: ''
+  datacolumn: corrected
+image:
+  imagename: ''
+  imsize:
+  - 100
+  cell: 1arcsec
+  phasecenter: ''
+  stokes: I
+  projection: SIN
+  startmodel: ''
+  specmode: mfs
+  reffreq: ''
+  nchan: -1
+  start: ''
+  width: ''
+  outframe: LSRK
+  veltype: radio
+  restfreq: []
+  interpolation: linear
+  perchanweightdensity: true
+  nterms: 2
+grid:
+  gridder: standard
+  facets: 1
+  wprojplanes: 1
+  vptable: ''
+  mosweight: true
+  aterm: true
+  psterm: false
+  wbawp: true
+  conjbeams: false
+  cfcache: ''
+  usepointing: false
+  computepastep: 360.0
+  rotatepastep: 360.0
+  pointingoffsetsigdev: []
+  pblimit: 0.2
+  normtype: flatnoise
+  psfphasecenter: ''
+weight:
+  weighting: natural
+  robust: 0.5
+  noise: 1.0Jy
+  npixels: 0
+  uvtaper: []
+deconvolution:
+  deconvolver: hogbom
+  scales: []
+  nterms: 2
+  smallscalebias: 0.0
+  fusedthreshold: 0.0
+  largestscale: -1
+  restoration: true
+  restoringbeam: []
+  pbcor: false
+  usemask: user
+  mask: ''
+  pbmask: 0.0
+  sidelobethreshold: 3.0
+  noisethreshold: 5.0
+  lownoisethreshold: 1.5
+  negativethreshold: 0.0
+  smoothfactor: 1.0
+  minbeamfrac: 0.3
+  cutthreshold: 0.01
+  growiterations: 100
+  dogrowprune: true
+  minpercentchange: 0.0
+  verbose: false
+  fastnoise: true
+iteration:
+  niter: 0
+  gain: 0.1
+  threshold: 0.0mJy
+  nsigma: 0.0
+  cycleniter: -1
+  cyclefactor: 1.0
+  minpsffraction: 0.05
+  maxpsffraction: 0.8
+  interactive: false
+  nmajor: -1
+  fullsummary: false
+normalization:
+  pblimit: 0.2
+  normtype: flatnoise
+  psfcutoff: 0.35
+misc:
+  restart: true
+  savemodel: none
+  calcres: true
+  calcpsf: true
+  psfcutoff: 0.35
+cluster:
+  type: local
+  nworkers: null
+  scheduler_address: null
+  threads_per_worker: 1
+  memory_limit: '0'
+  local_directory: null
+  parallel: false
+  cube_chunksize: -1
+  keep_subcubes: false
+  keep_partimages: false
+  slurm:
+    queue: null
+    account: null
+    walltime: 04:00:00
+    job_mem: 20GB
+    cores_per_job: 1
+    job_extra_directives: []
+    python: null
+    local_directory: null
+    log_directory: logs
+    job_script_prologue: []

@@ -61,6 +61,9 @@ version_file = "src/pclean/_version.py"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+pclean = ["configs/**/*.yaml", "py.typed"]
+
 # ---------------------------------------------------------------------------
 # Ruff configuration
 # ---------------------------------------------------------------------------
@@ -180,6 +183,7 @@ test-cov = "pytest tests/ -v --cov=pclean --cov-report=term-missing"
 lint = "ruff check src tests"
 fmt = "ruff format src tests"
 fmt-check = "ruff format src tests --check"
+gen-defaults = "python scripts/gen_defaults_yaml.py"
 
 [tool.pixi.environments]
 default = { features = ["casa"], solve-group = "default" }

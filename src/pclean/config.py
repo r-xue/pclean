@@ -826,18 +826,74 @@ def _deep_update(base: dict, overlay: dict) -> dict:
     return base
 
 
-def load_preset(name: str) -> PcleanConfig:
-    """Load a named preset from the ``configs/presets/`` directory.
+def _resolve_package_yaml(rel_path: str) -> Path | None:
+    """Resolve a YAML file bundled inside the ``pclean`` package.
 
-    Searches for ``<name>.yaml`` relative to the package root's
-    ``configs/presets/`` folder.
+    Uses :mod:`importlib.resources` so the lookup works both in editable
+    installs and after ``pip install``.
+
+    Args:
+        rel_path: Path relative to the ``pclean`` package root
+            (e.g. ``'configs/presets/vlass.yaml'``).
+
+    Returns:
+        Resolved filesystem :class:`Path`, or ``None`` if not found.
+    """
+    from importlib.resources import as_file, files
+
+    pkg_resource = files('pclean').joinpath(rel_path)
+    try:
+        # as_file() ensures the resource is available on the filesystem
+        # (important for zip-packaged distributions).
+        ctx = as_file(pkg_resource)
+        resolved = ctx.__enter__()  # noqa: PLC2801
+        if resolved.exists():
+            return resolved
+    except (FileNotFoundError, TypeError):
+        pass
+    return None
+
+
+def load_defaults() -> PcleanConfig:
+    """Load the bundled ``defaults.yaml`` reference snapshot.
+
+    This is equivalent to ``PcleanConfig()`` (all pydantic defaults)
+    but read from the packaged YAML file for verification purposes.
+
+    Returns:
+        A ``PcleanConfig`` with the reference default values.
+    """
+    pkg_path = _resolve_package_yaml('configs/defaults.yaml')
+    if pkg_path is not None:
+        log.info('Loading bundled defaults from %s', pkg_path)
+        return PcleanConfig.from_yaml(pkg_path)
+
+    # Fallback: CWD
+    cwd_path = Path('configs') / 'defaults.yaml'
+    if cwd_path.exists():
+        return PcleanConfig.from_yaml(cwd_path)
+
+    log.warning('defaults.yaml not found; returning pydantic defaults')
+    return PcleanConfig()
+
+
+def load_preset(name: str) -> PcleanConfig:
+    """Load a named preset from the bundled ``configs/presets/`` directory.
+
+    Searches first inside the installed package, then falls back to
+    CWD-relative paths.
 
     Args:
         name: Preset name (without ``.yaml`` extension).
     """
-    # Look relative to the package source tree first, then CWD
+    # 1. Packaged preset (works after pip install)
+    pkg_path = _resolve_package_yaml(f'configs/presets/{name}.yaml')
+    if pkg_path is not None:
+        log.info('Loading preset %s from package: %s', name, pkg_path)
+        return PcleanConfig.from_yaml(pkg_path)
+
+    # 2. CWD fallback paths
     candidates = [
-        Path(__file__).parent.parent.parent / 'configs' / 'presets' / f'{name}.yaml',
         Path('configs') / 'presets' / f'{name}.yaml',
         Path(f'{name}.yaml'),
     ]
@@ -846,5 +902,5 @@ def load_preset(name: str) -> PcleanConfig:
             log.info('Loading preset %s from %s', name, p)
             return PcleanConfig.from_yaml(p)
 
-    searched = ', '.join(str(c) for c in candidates)
-    raise FileNotFoundError(f'Preset {name!r} not found; searched: {searched}')
+    searched = ['<package>/configs/presets/'] + [str(c) for c in candidates]
+    raise FileNotFoundError(f'Preset {name!r} not found; searched: {", ".join(searched)}')

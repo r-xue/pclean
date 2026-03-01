@@ -1,0 +1,46 @@
+# VLASS continuum imaging preset
+# Override with your vis/imagename via CLI or a separate config file.
+
+selection:
+  datacolumn: corrected
+
+image:
+  imsize: [8192, 8192]
+  cell: 1arcsec
+  stokes: I
+  specmode: mfs
+  nterms: 2
+
+grid:
+  gridder: wproject
+  wprojplanes: 128
+  pblimit: 0.1
+
+weight:
+  weighting: briggs
+  robust: 0.5
+
+deconvolution:
+  deconvolver: mtmfs
+  nterms: 2
+  scales: [0, 5, 15]
+  pbcor: true
+  usemask: auto-multithresh
+  sidelobethreshold: 2.0
+  noisethreshold: 4.25
+  lownoisethreshold: 1.5
+  minbeamfrac: 0.3
+  growiterations: 75
+
+iteration:
+  niter: 20000
+  threshold: 0.0mJy
+  nsigma: 3.0
+  cycleniter: 500
+  cyclefactor: 2.0
+  nmajor: -1
+
+cluster:
+  parallel: true
+  type: local
+  threads_per_worker: 1
