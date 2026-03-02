@@ -22,18 +22,17 @@ classifiers = [
 ]
 license-files = ["LICENSE"]
 requires-python = ">= 3.10"
-dependencies = [
-    "casatools>=6.5",
-    "dask",
-    "distributed",
-    "numpy",
-    "pydantic>=2.0",
-    "pyyaml>=6.0",
+dependencies = ["dask", "distributed", "numpy", "pydantic>=2.0", "pyyaml>=6.0"]
+keywords = [
+    "astronomy",
+    "pipeline",
+    "ALMA",
+    "VLA",
+    "radio-astronomy",
+    "CASA",
+    "imaging",
 ]
-keywords = ["astronomy", "pipeline", "ALMA", "VLA", "radio-astronomy", "CASA", "imaging"]
-authors = [
-    {name = "MiCASA", email = "rx.astro@gmail.com"},
-]
+authors = [{ name = "MiCASA", email = "rx.astro@gmail.com" }]
 
 [project.urls]
 Homepage = "https://github.com/r-xue/pclean"
@@ -46,19 +45,10 @@ Changelog = "https://github.com/r-xue/pclean/releases"
 pclean = "pclean.__main__:main"
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-]
-slurm = [
-    "dask-jobqueue>=0.8",
-]
-docs = [
-    "sphinx>=7.0",
-    "furo",
-    "myst-parser>=2.0",
-    "sphinx-copybutton",
-]
+casa = ["casatools>=6.5"]
+dev = ["pytest", "pytest-cov"]
+slurm = ["dask-jobqueue>=0.8"]
+docs = ["sphinx>=7.0", "furo", "myst-parser>=2.0", "sphinx-copybutton"]
 
 [tool.setuptools-scm]
 root = "."
@@ -89,13 +79,13 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E4",  # pycodestyle imports — flags bad import grouping (e.g., multiple imports on one line)
-    "E7",  # pycodestyle statements — flags bad syntax patterns (e.g., `== None` instead of `is None`)
-    "E9",  # pycodestyle runtime errors — flags severe syntax and indentation errors
-    "W",   # pycodestyle warnings (trailing whitespace, etc.)
-    "F",   # pyflakes
-    "D",   # pydocstyle
-    "I",   # isort
+    "E4", # pycodestyle imports — flags bad import grouping (e.g., multiple imports on one line)
+    "E7", # pycodestyle statements — flags bad syntax patterns (e.g., `== None` instead of `is None`)
+    "E9", # pycodestyle runtime errors — flags severe syntax and indentation errors
+    "W",  # pycodestyle warnings (trailing whitespace, etc.)
+    "F",  # pyflakes
+    "D",  # pydocstyle
+    "I",  # isort
 ]
 ignore = [
     "D102", # Missing docstring in public method
@@ -125,8 +115,8 @@ skip-magic-trailing-comma = false
 
 [tool.coverage.run]
 omit = ['tests/*']
-branch = true             # Same as --cov-branch
-source = ['pclean']       # Same as --cov=pipeline
+branch = true       # Same as --cov-branch
+source = ['pclean'] # Same as --cov=pipeline
 
 [tool.coverage.report]
 fail_under = 60 # Set the minimum coverage percentage required
@@ -148,7 +138,10 @@ exclude_lines = [
 # ---------------------------------------------------------------------------
 
 [tool.pixi.workspace]
-channels = ["conda-forge"]
+# Allow mixing packages from the rx channel and conda-forge
+channel-priority = "disabled"
+# rx channel builds with fracbw/cubegridding parameter exposed for testing
+channels = ["https://conda.anaconda.org/rxue", "conda-forge"]
 platforms = ["linux-64", "osx-arm64"]
 
 [tool.pixi.pypi-dependencies]
@@ -159,18 +152,18 @@ macos = "15.0"
 
 [tool.pixi.dependencies]
 # Pinning to a specific minor version ensures environment stability
-python = "3.12.*" 
+python = "3.12.*"
 conda-ecosystem-user-package-isolation = "*"
 ipython = "*"
 pip = ">=23.0"
 
 # Use tilde or caret requirements to allow bugfixes but prevent breaking changes
-numpy = "~=2.2.0"  # Utilizing NumPy 2.x performance improvements
-dask = ">=2025.12.0" 
+numpy = "~=2.2.0"           # Utilizing NumPy 2.x performance improvements
+dask = ">=2025.12.0"
 distributed = ">=2025.12.0"
-dask-jobqueue = ">=0.9.0" # Highly recommended if running on HPC clusters
+dask-jobqueue = ">=0.9.0"   # Recommended if running on HPC clusters
 
-[tool.pixi.feature.casa.pypi-dependencies]
+[tool.pixi.feature.casa-pypi.pypi-dependencies]
 casatools = "*"
 casatasks = "*"
 
@@ -202,8 +195,8 @@ docs-html = "sphinx-build -b html docs docs/_build/html"
 docs-clean = "rm -rf docs/_build"
 
 [tool.pixi.environments]
-default = { features = ["casa"], solve-group = "default" }
-default-forge = { features = ["casa-forge"], solve-group = "forge" }
-dev = { features = ["casa", "dev"], solve-group = "default" }
-test = { features = ["dev"], solve-group = "default" }
+default = { features = ["casa-pypi"], solve-group = "default" }
+forge = { features = ["casa-forge"], solve-group = "forge" }
+dev = { features = ["casa-pypi", "dev"], solve-group = "default" }
+test = { features = ["casa-pypi", "dev"], solve-group = "default" }
 docs = { features = ["docs"], solve-group = "default" }
