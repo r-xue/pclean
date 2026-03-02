@@ -34,8 +34,18 @@ class SelectionConfig(BaseModel):
     """Data selection parameters."""
 
     vis: str | list[str] = ''
+
+    @field_validator('vis', mode='before')
+    @classmethod
+    def _coerce_vis(cls, v: Any) -> str | list[str]:
+        """Accept ``Path`` objects and coerce to ``str``."""
+        if isinstance(v, Path):
+            return str(v)
+        if isinstance(v, (list, tuple)):
+            return [str(item) for item in v]
+        return v
     field: str = ''
-    spw: str = ''
+    spw: str | list[str] = ''
     timerange: str = ''
     uvrange: str = ''
     antenna: str = ''
@@ -474,12 +484,20 @@ class PcleanConfig(BaseModel):
         if not vis_list:
             vis_list = ['']
 
+        spw = sel.spw
+        spw_list = [spw] * len(vis_list) if isinstance(spw, str) else list(spw)
+        if len(spw_list) != len(vis_list):
+            raise ValueError(
+                f'spw list length ({len(spw_list)}) must match '
+                f'vis list length ({len(vis_list)})'
+            )
+
         result: dict[str, dict] = {}
         for idx, msname in enumerate(vis_list):
             result[f'ms{idx}'] = {
                 'msname': msname,
                 'field': sel.field,
-                'spw': sel.spw,
+                'spw': spw_list[idx],
                 'timestr': sel.timerange,
                 'uvdist': sel.uvrange,
                 'antenna': sel.antenna,

@@ -132,6 +132,74 @@ def check_adios2_support(*, cleanup: bool = True) -> bool:
             shutil.rmtree(table_name)
 
 
+def ms_uses_adios2(ms_path: str) -> bool:
+    """Check whether any column in the given MS is managed by Adios2StMan.
+
+    Opens the table read-only, inspects ``getdminfo()``, and returns
+    ``True`` if at least one data-manager entry has ``TYPE == 'Adios2StMan'``.
+
+    Args:
+        ms_path: Path to a MeasurementSet directory.
+
+    Returns:
+        ``True`` if the MS contains ADIOS2-managed columns.
+    """
+    import casatools
+
+    tb = casatools.table()
+    try:
+        tb.open(ms_path, nomodify=True)
+        dminfo = tb.getdminfo()
+        tb.close()
+    except Exception as exc:
+        logger.debug('Could not inspect dminfo for %s: %s', ms_path, exc)
+        return False
+
+    for dm in dminfo.values():
+        if isinstance(dm, dict) and dm.get('TYPE') == 'Adios2StMan':
+            return True
+    return False
+
+
+def force_omp_single_thread() -> None:
+    """Force the OpenMP runtime to use exactly 1 thread.
+
+    General thread-safety precaution for ADIOS2-backed storage managers.
+    CASA gridding internals can launch OpenMP tasks that concurrently
+    access the MS; limiting to a single thread avoids potential data
+    races in the ADIOS2 engine.
+
+    ``os.environ['OMP_NUM_THREADS']`` alone is insufficient because
+    ``libgomp`` reads the variable only once (at the first OpenMP
+    call, typically during ``import casatools``).  This helper
+    therefore also calls ``omp_set_num_threads(1)`` via ``ctypes``
+    to override the cached value immediately.
+    """
+    import ctypes
+    import ctypes.util
+
+    os.environ['OMP_NUM_THREADS'] = '1'
+
+    for lib_name in ('gomp', 'omp', 'iomp5'):
+        path = ctypes.util.find_library(lib_name)
+        if path:
+            try:
+                lib = ctypes.CDLL(path)
+                lib.omp_set_num_threads(ctypes.c_int(1))
+                logger.info(
+                    'Forced OMP threads to 1 via %s (omp_set_num_threads)',
+                    lib_name,
+                )
+                return
+            except (OSError, AttributeError):
+                continue
+
+    logger.debug(
+        'Could not locate OpenMP runtime library; '
+        'relying on OMP_NUM_THREADS env var only',
+    )
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 

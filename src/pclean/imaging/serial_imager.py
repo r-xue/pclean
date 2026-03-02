@@ -84,6 +84,7 @@ class SerialImager:
 
         self._major_count = 0
         self._converged = False
+        self._adios2_detected = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -91,6 +92,7 @@ class SerialImager:
 
     def setup(self) -> None:
         """Create and configure all synthesis tools."""
+        self._detect_adios2()
         self._init_imager()
         self._init_normalizers()
         self._set_weighting()
@@ -272,9 +274,55 @@ class SerialImager:
 
     # -- tool initialization -------------------------------------------
 
+    def _detect_adios2(self) -> None:
+        """Check whether any input MS uses Adios2StMan.
+
+        Sets ``_adios2_detected`` so that ``_init_imager()`` can
+        conditionally call ``setcubegridding(False)`` for single-channel
+        subcubes.  Also forces ``OMP_NUM_THREADS=1`` as a general
+        thread-safety precaution for ADIOS2-backed storage managers.
+        """
+        self._adios2_detected = False
+        vis = self.config.selection.vis
+        vis_list = [vis] if isinstance(vis, str) else list(vis)
+        for ms_path in vis_list:
+            if not ms_path:
+                continue
+            try:
+                from pclean.utils.check_adios2 import force_omp_single_thread, ms_uses_adios2
+
+                if ms_uses_adios2(ms_path):
+                    self._adios2_detected = True
+                    force_omp_single_thread()
+                    log.info(
+                        'ADIOS2-backed MS detected (%s) — '
+                        'forcing OMP_NUM_THREADS=1',
+                        ms_path,
+                    )
+                    return
+            except Exception:
+                log.debug('Could not check ADIOS2 status for %s', ms_path, exc_info=True)
+
     def _init_imager(self) -> None:
         ct = _ct()
         self.si_tool = ct.synthesisimager()
+
+        # Disable cube gridding only for single-channel (or MFS) subcubes.
+        # With nchan<=1 the CubeMajorCycleAlgorithm path is pure overhead
+        # (a redundant secondary imager that re-opens the MS) and triggers
+        # the ADIOS2 SetSelection shape mismatch on indirect-array columns.
+        # For multi-channel subcubes we must keep cube gridding enabled so
+        # the C++ layer can chunk channels within available RAM.
+        nchan_this = self.config.image.nchan
+        if getattr(self, '_adios2_detected', False) and nchan_this <= 1:
+            try:
+                self.si_tool.setcubegridding(False)
+                log.info('Disabled cube gridding (nchan=%d, ADIOS2 MS)', nchan_this)
+            except AttributeError:
+                log.debug(
+                    'synthesisimager.setcubegridding() not available '
+                    '— falling back to OMP workaround only',
+                )
 
         # Select data from each MS
         for ms_key in sorted(self._selpars.keys()):

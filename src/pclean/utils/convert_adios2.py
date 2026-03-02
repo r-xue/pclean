@@ -32,6 +32,7 @@ def convert_ms_to_adios2(
     engine_type: str = 'BP4',
     engine_params: dict[str, str] | None = None,
     adios2_xml: str | None = None,
+    taql: str | None = None,
 ) -> str:
     """Copy a MeasurementSet, rebinding heavy columns to Adios2StMan.
 
@@ -82,6 +83,11 @@ def convert_ms_to_adios2(
             * ``BufferChunkSize`` — per-chunk size (BP5).
         adios2_xml: Path to a user-supplied ADIOS2 XML config file.
             If provided, *engine_type* and *engine_params* are ignored.
+        taql: Optional TaQL ``WHERE`` clause to select a subset of
+            rows before copying (e.g.
+            ``'DATA_DESC_ID IN [0]'``).  When set, ``tb.query(taql)``
+            is used as the copy source, so only matching rows are
+            written.  Sub-tables are copied as-is.
 
     Returns:
         The *output_ms* path on success.
@@ -188,13 +194,114 @@ def convert_ms_to_adios2(
     # Casacore's C++ deepCopy streams data row-by-row so it does not
     # load the full table into Python; peak memory is from ADIOS2's
     # internal write buffers.
-    nrow = tb.nrows()
+    # Optionally restrict to a row subset via TaQL.
+    if taql:
+        src = tb.query(query=taql)
+        logger.info('TaQL selection: %s (%d -> %d rows)', taql, tb.nrows(), src.nrows())
+    else:
+        src = tb
+
+    nrow = src.nrows()
     logger.info('Copying %s -> %s (%d rows, valuecopy, this may take a while)...', input_ms, output_ms, nrow)
-    tb.copy(newtablename=output_ms, deep=True, valuecopy=True, dminfo=dminfo)
+    src.copy(newtablename=output_ms, deep=True, valuecopy=True, dminfo=dminfo)
+
+    if taql:
+        src.close()
     tb.close()
 
     logger.info('Conversion complete: %s', output_ms)
     return output_ms
+
+
+def _get_spw_ids(vis: str) -> list[int]:
+    """Return sorted list of SPW IDs present in *vis*."""
+    import casatools
+
+    ms = casatools.ms()
+    ms.open(vis)
+    spw_info = ms.getspectralwindowinfo()
+    ms.close()
+    return sorted(int(k) for k in spw_info.keys())
+
+
+def _get_ddids_for_spw(vis: str, spw_id: int) -> list[int]:
+    """Return DATA_DESC_IDs that map to *spw_id* via the DATA_DESCRIPTION sub-table."""
+    import casatools
+
+    tb = casatools.table()
+    tb.open(os.path.join(vis, 'DATA_DESCRIPTION'))
+    spw_col = tb.getcol('SPECTRAL_WINDOW_ID')
+    tb.close()
+    return [int(i) for i, s in enumerate(spw_col) if s == spw_id]
+
+
+def split_and_convert_ms_to_adios2(
+    input_ms: str,
+    output_dir: str,
+    *,
+    target_columns: tuple[str, ...] | list[str] = _DEFAULT_TARGET_COLUMNS,
+    overwrite: bool = False,
+    engine_type: str = 'BP4',
+    engine_params: dict[str, str] | None = None,
+    adios2_xml: str | None = None,
+) -> list[str]:
+    """Select rows by SPW and convert each subset to Adios2StMan in one pass.
+
+    This implements *Workaround 3* from the Adios2StMan debug notes.
+    For each SPW the function builds a TaQL ``DATA_DESC_ID IN [...]``
+    clause and passes it to `convert_ms_to_adios2` via the *taql*
+    parameter.  The row selection and ADIOS2 rebinding happen in a
+    single ``deepCopy`` — no intermediate MS is written.
+
+    Sub-tables (``SPECTRAL_WINDOW``, ``DATA_DESCRIPTION``, etc.) are
+    copied as-is and therefore still contain entries for all SPWs.
+    This is cosmetic; the imager only accesses rows present in the
+    main table.
+
+    Args:
+        input_ms: Path to the source MeasurementSet.
+        output_dir: Directory under which per-SPW ADIOS2 datasets are
+            written (``<output_dir>/<basename>_spw<N>.ms``).
+        target_columns: Columns to rebind to Adios2StMan.
+        overwrite: If ``True``, remove existing outputs.
+        engine_type: ADIOS2 engine type (forwarded to
+            `convert_ms_to_adios2`).
+        engine_params: ADIOS2 engine parameters.
+        adios2_xml: Path to a user-supplied ADIOS2 XML config.
+
+    Returns:
+        List of output ADIOS2-backed MS paths.
+    """
+    if not os.path.exists(input_ms):
+        raise FileNotFoundError(f'Input MS not found: {input_ms}')
+
+    os.makedirs(output_dir, exist_ok=True)
+    spws = _get_spw_ids(input_ms)
+    logger.info('Converting %s per-SPW (%d SPWs) to ADIOS2', input_ms, len(spws))
+
+    outputs: list[str] = []
+    for spw_id in spws:
+        out_ms = os.path.join(output_dir, f'spw{spw_id}.ms')
+
+        # Build TaQL to select rows for this SPW.
+        ddids = _get_ddids_for_spw(input_ms, spw_id)
+        ddid_csv = ','.join(str(d) for d in ddids)
+        taql = f'DATA_DESC_ID IN [{ddid_csv}]'
+
+        convert_ms_to_adios2(
+            input_ms,
+            out_ms,
+            target_columns=target_columns,
+            overwrite=overwrite,
+            engine_type=engine_type,
+            engine_params=engine_params,
+            adios2_xml=adios2_xml,
+            taql=taql,
+        )
+        outputs.append(out_ms)
+
+    logger.info('Done. %d ADIOS2 datasets in %s', len(outputs), output_dir)
+    return outputs
 
 
 if __name__ == '__main__':
@@ -233,18 +340,42 @@ if __name__ == '__main__':
         default=None,
         help='Path to a user-supplied ADIOS2 XML config file (overrides --engine-type and --max-buffer-size)',
     )
+    parser.add_argument(
+        '--split-spw',
+        action='store_true',
+        help='Convert each SPW separately via TaQL row selection '
+             '(workaround for the getSliceV dimension bug). '
+             'output_ms is treated as a directory.',
+    )
+    parser.add_argument(
+        '--taql',
+        default=None,
+        help='TaQL WHERE clause to select a row subset (e.g. "DATA_DESC_ID IN [0]")',
+    )
     args = parser.parse_args()
 
     ep: dict[str, str] | None = None
     if args.max_buffer_size:
         ep = {'MaxBufferSize': _normalize_adios2_size(args.max_buffer_size)}
 
-    convert_ms_to_adios2(
-        args.input_ms,
-        args.output_ms,
-        target_columns=args.columns,
-        overwrite=args.overwrite,
-        engine_type=args.engine_type,
-        engine_params=ep,
-        adios2_xml=args.adios2_xml,
-    )
+    if args.split_spw:
+        split_and_convert_ms_to_adios2(
+            args.input_ms,
+            args.output_ms,
+            target_columns=args.columns,
+            overwrite=args.overwrite,
+            engine_type=args.engine_type,
+            engine_params=ep,
+            adios2_xml=args.adios2_xml,
+        )
+    else:
+        convert_ms_to_adios2(
+            args.input_ms,
+            args.output_ms,
+            target_columns=args.columns,
+            overwrite=args.overwrite,
+            engine_type=args.engine_type,
+            engine_params=ep,
+            adios2_xml=args.adios2_xml,
+            taql=args.taql,
+        )

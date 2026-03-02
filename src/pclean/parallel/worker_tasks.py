@@ -113,6 +113,12 @@ def run_subcube(config_dict: dict) -> dict:
 
     from pclean.config import PcleanConfig
     from pclean.imaging.serial_imager import SerialImager
+    from pclean.utils.check_adios2 import force_omp_single_thread
+
+    # Force OMP_NUM_THREADS=1 (env + ctypes) before casatools is imported
+    # lazily by SerialImager.  SerialImager._detect_adios2() handles
+    # per-MS ADIOS2 detection and logging during setup().
+    force_omp_single_thread()
 
     config = PcleanConfig.model_validate(config_dict)
 

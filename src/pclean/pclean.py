@@ -32,10 +32,10 @@ def pclean(
     # --- Config overlay ------------------------------------------------
     config: PcleanConfig | str | Path | None = None,
     # --- Data selection ------------------------------------------------
-    vis: str | Sequence[str] = '',
+    vis: str | Path | Sequence[str | Path] = '',
     selectdata: bool = True,
     field: str = '',
-    spw: str = '',
+    spw: str | Sequence[str] = '',
     timerange: str = '',
     uvrange: str = '',
     antenna: str = '',
