@@ -7,11 +7,11 @@ name = "casa-pclean"
 dynamic = ["version"]
 description = "Parallel CLEAN imaging using Dask and CASA tools"
 readme = "README.md"
+license = "GPL-3.0-or-later"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -50,7 +50,7 @@ dev = ["pytest", "pytest-cov"]
 slurm = ["dask-jobqueue>=0.8"]
 docs = ["sphinx>=7.0", "furo", "myst-parser>=2.0", "sphinx-copybutton"]
 
-[tool.setuptools-scm]
+[tool.setuptools_scm]
 root = "."
 version_file = "src/pclean/_version.py"
 
