@@ -16,6 +16,7 @@ update_defaults
 
 code_structure
 parallelization
+why_adios2
 memory_estimation
 memory_management
 image_concatenation
