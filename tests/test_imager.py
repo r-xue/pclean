@@ -40,9 +40,9 @@ class TestSerialImager:
             mod._casatools = None
 
             from pclean.imaging.serial_imager import SerialImager
-            from pclean.params import PcleanParams
+            from pclean.config import PcleanConfig
 
-            params = PcleanParams(
+            params = PcleanConfig.from_flat_kwargs(
                 vis='test.ms',
                 imagename='test_img',
                 niter=100,
@@ -64,9 +64,9 @@ class TestSerialImager:
             mod._casatools = None
 
             from pclean.imaging.serial_imager import SerialImager
-            from pclean.params import PcleanParams
+            from pclean.config import PcleanConfig
 
-            params = PcleanParams(
+            params = PcleanConfig.from_flat_kwargs(
                 vis='test.ms',
                 imagename='test_run',
                 niter=100,

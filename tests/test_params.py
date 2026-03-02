@@ -123,9 +123,10 @@ class TestFreqPartition:
     """Frequency-based cube partition logic."""
 
     def test_freq_partition_splits_channels(self):
+        from pclean.config import PcleanConfig
         from pclean.utils.partition import _partition_cube_even
 
-        p = PcleanParams(
+        p = PcleanConfig.from_flat_kwargs(
             vis='a.ms',
             imagename='cube',
             specmode='cube',
@@ -137,31 +138,32 @@ class TestFreqPartition:
         assert len(subs) == 5
         # Greedy distribution: first 117%5=2 subcubes get 24 chans,
         # remaining 3 get 23.
-        nchans = [s.allimpars['0']['nchan'] for s in subs]
+        nchans = [s.image.nchan for s in subs]
         assert nchans == [24, 24, 23, 23, 23]
         assert sum(nchans) == 117
         # Each subcube must have a frequency start string, not a channel #
         for s in subs:
-            assert 'GHz' in s.allimpars['0']['start']
+            assert 'GHz' in s.image.start
         # Subcube starts must be distinct and increasing
-        starts = [s.allimpars['0']['start'] for s in subs]
+        starts = [s.image.start for s in subs]
         assert len(set(starts)) == 5
 
     def test_channel_partition_fallback(self):
         """When start is a channel index, fallback to channel-based split."""
+        from pclean.config import PcleanConfig
         from pclean.utils.partition import _partition_cube_even
 
-        p = PcleanParams(
+        p = PcleanConfig.from_flat_kwargs(
             vis='a.ms',
             imagename='cube',
             specmode='cube',
             nchan=100,
-            start=0,
-            width=1,
+            start='0',
+            width='1',
         )
         subs = _partition_cube_even(p, nparts=4, nchan=100)
         assert len(subs) == 4
-        assert all('GHz' not in s.allimpars['0']['start'] for s in subs)
+        assert all('GHz' not in s.image.start for s in subs)
 
 
 class TestRowChunkParams:
@@ -195,12 +197,13 @@ class TestCubeChunksize:
     def test_nparts_from_chunksize(self):
         """_compute_nparts returns ceil(nchan / chunksize)."""
         import math
+        from pclean.config import PcleanConfig
 
         class FakeCluster:
             client = None
             worker_count = 5
 
-        p = PcleanParams(
+        p = PcleanConfig.from_flat_kwargs(
             vis='a.ms',
             specmode='cube',
             nchan=117,
@@ -215,12 +218,13 @@ class TestCubeChunksize:
 
     def test_nparts_default_is_nworkers(self):
         """chunksize=-1 falls back to nparts=nworkers."""
+        from pclean.config import PcleanConfig
 
         class FakeCluster:
             client = None
             worker_count = 5
 
-        p = PcleanParams(
+        p = PcleanConfig.from_flat_kwargs(
             vis='a.ms',
             specmode='cube',
             nchan=117,
@@ -235,12 +239,13 @@ class TestCubeChunksize:
     def test_nparts_grouped(self):
         """chunksize=10 → ceil(117/10) = 12 tasks."""
         import math
+        from pclean.config import PcleanConfig
 
         class FakeCluster:
             client = None
             worker_count = 5
 
-        p = PcleanParams(
+        p = PcleanConfig.from_flat_kwargs(
             vis='a.ms',
             specmode='cube',
             nchan=117,
