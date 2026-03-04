@@ -22,13 +22,28 @@ log = logging.getLogger(__name__)
 
 _dask_distributed = None
 QUEUE_WAIT = 60
+COMM_TIMEOUT = 600  # client wait timeout threshold to initialize connection to the scheduler, in seconds
 
 
 def _dd():
     global _dask_distributed
     if _dask_distributed is None:
-        import dask.distributed as dd  # type: ignore
+        import dask.distributed as dd
+        import dask.config
 
+        #  Minimize the risk of a dask worker inside a blocking C++ call (via a Python binding like casatools)
+        #  being marked as unresponsive and killed by the scheduler.  CASA workloads can have long-running C++ calls that
+        #  Dask cannot introspect.
+        _comm_timeout_str = f'{COMM_TIMEOUT}s'
+        dask.config.set({
+            # Per-message connection timeout during operation
+            'distributed.comm.timeouts.connect': _comm_timeout_str,  # default: 10s
+            # Per-message read/write timeout during operation
+            'distributed.comm.timeouts.tcp': _comm_timeout_str,  # default: 30s
+            'distributed.worker.heartbeat-interval': '10s',  # default: 0.5s
+            'distributed.scheduler.worker-ttl': '1200s',  # 1200s (20 minutes) or None to disable
+            'distributed.worker.lifetime.duration': None,  # no forced worker restart
+        })
         _dask_distributed = dd
     return _dask_distributed
 
@@ -142,7 +157,7 @@ class DaskClusterManager:
 
         if self.cluster_type == 'address':
             log.info('Connecting to existing scheduler at %s', self.scheduler_address)
-            self._client = dd.Client(self.scheduler_address)
+            self._client = dd.Client(self.scheduler_address, timeout=COMM_TIMEOUT)
 
         elif self.cluster_type == 'slurm':
             self._start_slurm(dd)
@@ -156,7 +171,7 @@ class DaskClusterManager:
                 memory_limit=self.memory_limit,
                 local_directory=self.local_directory,
             )
-            self._client = dd.Client(self._cluster)
+            self._client = dd.Client(self._cluster, timeout=COMM_TIMEOUT)
 
         # Block until all requested workers have registered with the
         # scheduler.  Without this, worker_count can return a smaller
@@ -230,7 +245,7 @@ class DaskClusterManager:
 
         self._cluster = SLURMCluster(**slurm_kwargs)
         self._cluster.scale(jobs=self.nworkers)
-        self._client = dd.Client(self._cluster)
+        self._client = dd.Client(self._cluster, timeout=COMM_TIMEOUT)
 
     def shutdown(self) -> None:
         """Close client and cluster."""
