@@ -368,6 +368,7 @@ class SerialImager:
             'multifield',
             'usecubebriggs',
             'uvtaper',
+            'fracbw',
         }
         wp = {k: v for k, v in self._weightpars.items() if k in _WEIGHT_KEYS}
         self.si_tool.setweighting(**wp)

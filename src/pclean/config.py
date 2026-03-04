@@ -108,6 +108,7 @@ class WeightConfig(BaseModel):
     noise: str = '1.0Jy'
     npixels: int = 0
     uvtaper: list[str] = Field(default_factory=list)
+    fracbw: float | None = None  # pre-computed fractional bandwidth for briggsbwtaper
 
 
 class DeconvolutionConfig(BaseModel):
@@ -593,17 +594,23 @@ class PcleanConfig(BaseModel):
         if weighting == 'briggsbwtaper':
             wp['type'] = 'briggs'
             wp['rmode'] = 'bwtaper'
-            from pclean.utils.partition import _parse_freq_hz
+            # Use pre-computed fracbw if available (e.g. inherited from
+            # the parent config when this is a sub-cube).  Otherwise
+            # compute it from the current image start/width/nchan.
+            if wgt.fracbw is not None and wgt.fracbw > 0:
+                wp['fracbw'] = wgt.fracbw
+            else:
+                from pclean.utils.partition import _parse_freq_hz
 
-            start_hz = _parse_freq_hz(self.image.start)
-            width_hz = _parse_freq_hz(self.image.width)
-            nchan_full = self.image.nchan
-            if start_hz is not None and width_hz is not None and nchan_full > 1:
-                min_freq = start_hz
-                max_freq = start_hz + (nchan_full - 1) * abs(width_hz)
-                if min_freq > max_freq:
-                    min_freq, max_freq = max_freq, min_freq
-                wp['fracbw'] = 2.0 * (max_freq - min_freq) / (max_freq + min_freq)
+                start_hz = _parse_freq_hz(self.image.start)
+                width_hz = _parse_freq_hz(self.image.width)
+                nchan_full = self.image.nchan
+                if start_hz is not None and width_hz is not None and nchan_full > 1:
+                    min_freq = start_hz
+                    max_freq = start_hz + (nchan_full - 1) * abs(width_hz)
+                    if min_freq > max_freq:
+                        min_freq, max_freq = max_freq, min_freq
+                    wp['fracbw'] = 2.0 * (max_freq - min_freq) / (max_freq + min_freq)
         elif weighting == 'briggsabs':
             wp['type'] = 'briggs'
             wp['rmode'] = 'abs'
@@ -788,6 +795,13 @@ class PcleanConfig(BaseModel):
         data['image']['nchan'] = nchan
         data['image']['start'] = start if isinstance(start, str) else str(start)
         data['image']['imagename'] = f'{self.imagename}.subcube.{image_suffix}'
+        # Pre-compute fracbw from the *parent* (full-cube) config so that
+        # subcubes with nchan=1 still get the correct fractional bandwidth
+        # for briggsbwtaper weighting.
+        if self.weight.weighting == 'briggsbwtaper' and self.weight.fracbw is None:
+            parent_wp = self.to_casa_weightpars()
+            if 'fracbw' in parent_wp:
+                data['weight']['fracbw'] = parent_wp['fracbw']
         return PcleanConfig.model_validate(data)
 
     # ------------------------------------------------------------------
