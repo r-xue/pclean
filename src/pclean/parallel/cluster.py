@@ -24,12 +24,59 @@ _dask_distributed = None
 QUEUE_WAIT = 60
 COMM_TIMEOUT = 600  # client wait timeout threshold to initialize connection to the scheduler, in seconds
 
+# ---------------------------------------------------------------------------
+# Monkey-patch: guard against garbage TCP frame sizes
+# ---------------------------------------------------------------------------
+# When Dask workers all reconnect simultaneously after a long blocking C++ call
+# (e.g. CASA makePSF), the OS TCP stack sometimes delivers a new connection
+# carrying stale residual bytes.  Dask reads those bytes as an 8-byte uint64
+# frame-length header and passes the absurd value to numpy.empty(), triggering
+# a MemoryError logged as a tornado ERROR.  The run still completes, but the
+# log is alarming.
+#
+# The fix wraps distributed.comm.tcp.read_bytes_rw at the module level.
+# TCP.read() resolves 'read_bytes_rw' from the module globals at every call,
+# so replacing the module attribute is enough — no library file is touched.
+
+_MAX_FRAME_BYTES = 1 << 30  # 1 GiB — no real Dask message exceeds this
+_dask_tcp_patched = False
+
+
+def _patch_dask_tcp() -> None:
+    """Monkey-patch distributed.comm.tcp to reject implausibly large frames."""
+    global _dask_tcp_patched
+    if _dask_tcp_patched:
+        return
+    try:
+        import distributed.comm.tcp as _tcp
+        from tornado.iostream import StreamClosedError as _SCE
+
+        _orig = _tcp.read_bytes_rw
+
+        async def _safe_read_bytes_rw(stream, n: int):
+            if n > _MAX_FRAME_BYTES:
+                raise _SCE(
+                    f"Implausible TCP frame size {n:,} B "
+                    f"(> {_MAX_FRAME_BYTES:,} B limit) — "
+                    "likely garbage bytes from a stale/reset connection; "
+                    "dropping socket"
+                )
+            return await _orig(stream, n)
+
+        _tcp.read_bytes_rw = _safe_read_bytes_rw
+        _dask_tcp_patched = True
+        log.debug("Patched distributed.comm.tcp.read_bytes_rw with frame-size guard")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Could not patch distributed.comm.tcp.read_bytes_rw: %s", e)
+
 
 def _dd():
     global _dask_distributed
     if _dask_distributed is None:
         import dask.distributed as dd
         import dask.config
+
+        _patch_dask_tcp()
 
         #  Minimize the risk of a dask worker inside a blocking C++ call (via a Python binding like casatools)
         #  being marked as unresponsive and killed by the scheduler.  CASA workloads can have long-running C++ calls that
@@ -43,6 +90,11 @@ def _dd():
             'distributed.worker.heartbeat-interval': '10s',  # default: 0.5s
             'distributed.scheduler.worker-ttl': '1200s',  # 1200s (20 minutes) or None to disable
             'distributed.worker.lifetime.duration': None,  # no forced worker restart
+            # Retry failed connections (guards against garbage TCP frames from OS-level
+            # half-open connections when many workers reconnect simultaneously)
+            'distributed.comm.retry.count': 5,  # default: 0
+            'distributed.comm.retry.delay.min': '1s',  # default: 1s
+            'distributed.comm.retry.delay.max': '30s',  # default: 30s
         })
         _dask_distributed = dd
     return _dask_distributed
