@@ -1,4 +1,4 @@
-r"""CLI entry point for pclean.
+"""CLI entry point for pclean.
 
 Usage::
 
@@ -140,9 +140,13 @@ def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    from pclean import CustomFormatter
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(CustomFormatter())
     logging.basicConfig(
         level=getattr(logging, args.log_level),
-        format='%(asctime)s %(name)-20s %(levelname)-8s %(message)s',
+        handlers=[handler],
     )
 
     config_path = args.config
