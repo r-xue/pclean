@@ -123,13 +123,13 @@ class SerialImager:
 
     def make_psf(self) -> None:
         """Compute the PSF (and gather/normalize for MFS)."""
-        log.info('Computing PSF …')
+        log.info('%s Computing PSF …', self._tag)
         self.si_tool.makepsf()
         self._normalize_psf()
 
     def make_pb(self) -> None:
         """Compute the primary beam."""
-        log.info('Computing PB …')
+        log.info('%s Computing PB …', self._tag)
         try:
             self.si_tool.makepb()
         except Exception:
@@ -143,7 +143,7 @@ class SerialImager:
             is_first: If ``True`` this is the initial residual computation
                 (model is zero).
         """
-        log.info('Major cycle %d …', self._major_count)
+        log.info('%s Major cycle %d …', self._tag, self._major_count)
         if self._is_mfs:
             self._pre_major_normalize()
 
@@ -253,7 +253,7 @@ class SerialImager:
         flag = self.ib_tool.cleanComplete(reachedMajorLimit=reached_major)
         if flag > 0:
             reason = self._STOP_REASONS.get(flag, f'unknown ({flag})')
-            log.info('Reached stopping criterion: %s', reason)
+            log.info('%s Reached stopping criterion: %s', self._tag, reason)
         self._converged = flag
         return flag
 
@@ -264,13 +264,13 @@ class SerialImager:
 
     def restore(self) -> None:
         """Restore the final CLEAN images."""
-        log.info('Restoring images …')
+        log.info('%s Restoring images …', self._tag)
         for fld in self.sd_tools:
             self.sd_tools[fld].restore()
 
     def pbcor(self) -> None:
         """Apply primary-beam correction."""
-        log.info('PB-correcting images …')
+        log.info('%s PB-correcting images …', self._tag)
         for fld in self.sd_tools:
             self.sd_tools[fld].pbcor()
 
@@ -289,21 +289,21 @@ class SerialImager:
 
             t0 = time.monotonic()
             self.setup()
-            log.info('setup:          %.1fs', time.monotonic() - t0)
+            log.info('%s setup:          %.1fs', self._tag, time.monotonic() - t0)
 
             t0 = time.monotonic()
             self.make_psf()
-            log.info('make_psf:       %.1fs', time.monotonic() - t0)
+            log.info('%s make_psf:       %.1fs', self._tag, time.monotonic() - t0)
 
             t0 = time.monotonic()
             self.make_pb()
-            log.info('make_pb:        %.1fs', time.monotonic() - t0)
+            log.info('%s make_pb:        %.1fs', self._tag, time.monotonic() - t0)
 
             # Initial residual (dirty image)
             if self._miscpars.get('calcres', True):
                 t0 = time.monotonic()
                 self.run_major_cycle(is_first=True)
-                log.info('major_cycle(0): %.1fs', time.monotonic() - t0)
+                log.info('%s major_cycle(0): %.1fs', self._tag, time.monotonic() - t0)
 
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
@@ -331,13 +331,13 @@ class SerialImager:
                 if self.config.deconvolution.restoration:
                     t0 = time.monotonic()
                     self.restore()
-                    log.info('restore:        %.1fs', time.monotonic() - t0)
+                    log.info('%s restore:        %.1fs', self._tag, time.monotonic() - t0)
                 if self.config.deconvolution.pbcor:
                     t0 = time.monotonic()
                     self.pbcor()
-                    log.info('pbcor:          %.1fs', time.monotonic() - t0)
+                    log.info('%s pbcor:          %.1fs', self._tag, time.monotonic() - t0)
 
-            log.info('run total:      %.1fs', time.monotonic() - t_total)
+            log.info('%s run total:      %.1fs', self._tag, time.monotonic() - t_total)
             return self._summary()
         finally:
             self.teardown()
@@ -345,6 +345,17 @@ class SerialImager:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @property
+    def _tag(self) -> str:
+        """Short identifier for log messages (e.g. ``[subcube.ch042]``)."""
+        name = os.path.basename(self.config.imagename)
+        # For subcubes the imagename looks like <base>.subcube.<suffix>.
+        # Extract "subcube.<suffix>" so workers are easy to tell apart.
+        idx = name.find('.subcube.')
+        if idx >= 0:
+            return f'[{name[idx + 1:]}]'
+        return f'[{name}]'
 
     @property
     def _is_mfs(self) -> bool:
@@ -385,21 +396,31 @@ class SerialImager:
         ct = _ct()
         self.si_tool = ct.synthesisimager()
 
-        # Disable cube gridding only for single-channel (or MFS) subcubes.
-        # With nchan<=1 the CubeMajorCycleAlgorithm path is pure overhead
-        # (a redundant secondary imager that re-opens the MS) and triggers
-        # the ADIOS2 SetSelection shape mismatch on indirect-array columns.
-        # For multi-channel subcubes we must keep cube gridding enabled so
-        # the C++ layer can chunk channels within available RAM.
+        # Disable cube gridding for single-channel (or MFS) subcubes.
+        # With nchan<=1 the CubeMajorCycleAlgorithm path is pure overhead:
+        #
+        #   1. It creates a redundant secondary imager that re-opens the MS
+        #      (unnecessary when there is only one channel to grid).
+        #   2. Its internal copyMask/SetupNewTable for the residual mask0
+        #      subtable hits a casacore table-cache bug on the 2nd+ major
+        #      cycle — the mask0 created during gridding is still in the
+        #      process-global table cache when copyMask tries to SetupNew-
+        #      Table for the same path, producing a noisy WARN per subcube
+        #      per major cycle.
+        #   3. For ADIOS2-backed MS files, the secondary imager triggers
+        #      a SetSelection shape mismatch on indirect-array columns.
+        #
+        # For multi-channel subcubes we keep cube gridding enabled so the
+        # C++ layer can chunk channels within available RAM.
         nchan_this = self.config.image.nchan
-        if getattr(self, '_adios2_detected', False) and nchan_this <= 1:
+        if nchan_this <= 1:
             try:
                 self.si_tool.setcubegridding(False)
-                log.info('Disabled cube gridding (nchan=%d, ADIOS2 MS)', nchan_this)
+                log.info('%s Disabled cube gridding (nchan=%d)', self._tag, nchan_this)
             except AttributeError:
                 log.debug(
                     'synthesisimager.setcubegridding() not available '
-                    '— falling back to OMP workaround only',
+                    '— falling back to default cube gridding path',
                 )
 
         # Select data from each MS
