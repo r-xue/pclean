@@ -58,7 +58,7 @@ version_file = "src/pclean/_version.py"
 where = ["src"]
 
 [tool.setuptools.package-data]
-pclean = ["configs/**/*.yaml", "py.typed"]
+pclean = ["configs/**/*.yaml", "configs/**/*.xml", "py.typed"]
 
 # ---------------------------------------------------------------------------
 # Ruff configuration

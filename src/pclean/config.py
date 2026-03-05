@@ -219,6 +219,7 @@ class ClusterConfig(BaseModel):
     cube_chunksize: int = -1
     keep_subcubes: bool = False
     keep_partimages: bool = False
+    concat_mode: Literal['auto', 'paged', 'virtual', 'movevirtual'] = 'auto'
     slurm: SlurmConfig = Field(default_factory=SlurmConfig)
 
 
@@ -375,6 +376,7 @@ class PcleanConfig(BaseModel):
             'parallel', 'nworkers', 'scheduler_address',
             'threads_per_worker', 'memory_limit', 'local_directory',
             'cube_chunksize', 'keep_subcubes', 'keep_partimages',
+            'concat_mode',
         }
         # Cluster type
         _clu_type_key = 'cluster_type'
@@ -936,3 +938,23 @@ def load_preset(name: str) -> PcleanConfig:
 
     searched = ['<package>/configs/presets/'] + [str(c) for c in candidates]
     raise FileNotFoundError(f'Preset {name!r} not found; searched: {", ".join(searched)}')
+
+
+def get_adios2_config_path() -> Path | None:
+    """Return the path to the bundled ADIOS2 BP5 XML configuration file.
+
+    The file enables lossless blosc2/zstd compression and sets sensible
+    buffer sizes for CASA Measurement Sets stored in ADIOS2 format.
+    Point ADIOS2 at it via the environment variable before opening any MS::
+
+        import os
+        from pclean.config import get_adios2_config_path
+
+        path = get_adios2_config_path()
+        if path is not None:
+            os.environ.setdefault('ADIOS2_INIT_FILE', str(path))
+
+    Returns:
+        Resolved filesystem :class:`Path`, or ``None`` if not found.
+    """
+    return _resolve_package_yaml('configs/adios2_config.xml')

@@ -108,11 +108,39 @@ class ParallelCubeImager:
         # 5. Concatenate sub-cube images into final output
         # Workers write images using absolute paths, so we must use
         # the same absolute base name when looking for sub-cube products.
+        #
+        # Resolve concat_mode:
+        #   'auto'         -> 'nomovevirtual' if keep_subcubes else 'paged'
+        #   'virtual'      -> 'nomovevirtual' (subcubes must stay on disk)
+        #   'movevirtual'  -> 'movevirtual'   (renames subcubes into output)
+        #   'paged'        -> 'paged'         (physical copy, always safe)
         abs_imgname = os.path.abspath(self.config.imagename)
-        concat_subcubes(abs_imgname, nparts)
+        keep = self.config.cluster.keep_subcubes
+        user_mode = self.config.cluster.concat_mode
+
+        if user_mode == 'auto':
+            mode = 'nomovevirtual' if keep else 'paged'
+        elif user_mode == 'virtual':
+            mode = 'nomovevirtual'
+            if not keep:
+                log.warning(
+                    "concat_mode='virtual' requires subcubes to remain on "
+                    "disk; forcing keep_subcubes=True for this run"
+                )
+                keep = True
+        elif user_mode == 'movevirtual':
+            mode = 'movevirtual'
+            # movevirtual renames subcubes into the output dir, so they
+            # are consumed regardless of keep_subcubes.
+        else:
+            mode = 'paged'
+
+        concat_subcubes(abs_imgname, nparts, mode=mode)
 
         # 6. Clean up subcube artifacts unless keep_subcubes is set
-        if not self.config.cluster.keep_subcubes:
+        # movevirtual already consumed subcubes (renamed into output),
+        # so cleanup is only needed for 'paged' mode.
+        if not keep and mode != 'movevirtual':
             self._cleanup_subcubes(abs_imgname, nparts)
 
         return {

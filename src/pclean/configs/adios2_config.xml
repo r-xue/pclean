@@ -1,0 +1,82 @@
+<!-- adios2_config.xml — place next to your .ms -->
+<?xml version="1.0"?>
+<adios-config>
+  <io name="adios2stman">
+    <engine type="BP5">
+      <!--
+        InitialBufferSize: how much memory ADIOS2 pre-allocates for its
+        internal write buffer.  A larger value means fewer I/O round-trips
+        when writing large tables.
+        Default is 16KB — far too small for visibility columns.
+      -->
+      <parameter key="InitialBufferSize" value="512MB"/>
+
+      <!--
+        MaxBufferSize: upper bound on the internal buffer.
+        Set this to roughly the size of your largest column.
+      -->
+      <parameter key="MaxBufferSize" value="2GB"/>
+
+      <!--
+        NumAggregators: controls how many parallel I/O streams
+        ADIOS2 uses internally.  Set to 1 for single-process reads
+        (pclean workers are single-threaded).
+      -->
+      <parameter key="NumAggregators" value="1"/>
+    </engine>
+
+    <!--
+      Per-column compression tuned for VI2's imaging access pattern.
+
+      VI2 reads all baselines at one timestamp per subchunk (typically
+      351 rows for VLA, ~946 for ALMA).  Aligning the blosc2 blocksize
+      to roughly match one subchunk reduces redundant decompression.
+
+      DATA: lz4 at clevel=1 — fastest decompression, read on every
+            gridding call.  blocksize=2MB ≈ one VLA subchunk of DATA.
+      FLAG: zstd at clevel=5 — mostly zeros, compresses extremely well.
+      WEIGHT / SIGMA: small per-row arrays, higher compression OK.
+    -->
+    <variable name="DATA">
+      <operator type="blosc2">
+        <parameter key="clevel" value="1"/>
+        <parameter key="compressor" value="lz4"/>
+        <parameter key="nthreads" value="1"/>
+        <parameter key="blocksize" value="2097152"/>
+      </operator>
+    </variable>
+
+    <variable name="CORRECTED_DATA">
+      <operator type="blosc2">
+        <parameter key="clevel" value="1"/>
+        <parameter key="compressor" value="lz4"/>
+        <parameter key="nthreads" value="1"/>
+        <parameter key="blocksize" value="2097152"/>
+      </operator>
+    </variable>
+
+    <variable name="FLAG">
+      <operator type="blosc2">
+        <parameter key="clevel" value="5"/>
+        <parameter key="compressor" value="zstd"/>
+        <parameter key="nthreads" value="1"/>
+      </operator>
+    </variable>
+
+    <variable name="WEIGHT">
+      <operator type="blosc2">
+        <parameter key="clevel" value="5"/>
+        <parameter key="compressor" value="zstd"/>
+        <parameter key="nthreads" value="1"/>
+      </operator>
+    </variable>
+
+    <variable name="SIGMA">
+      <operator type="blosc2">
+        <parameter key="clevel" value="5"/>
+        <parameter key="compressor" value="zstd"/>
+        <parameter key="nthreads" value="1"/>
+      </operator>
+    </variable>
+  </io>
+</adios-config>
