@@ -82,9 +82,11 @@ def concat_images(
         axis: Axis to concatenate along (default -1 -> spectral).
         relax: Relax axis checks.
         overwrite: Overwrite *outimage* if it exists.
-        mode: CASA imageconcat mode.  ``'paged'`` (default) physically
-            copies data.  ``'nomovevirtual'`` creates a reference catalog
-            (near-instant, but requires input images to stay on disk).
+        mode: CASA imageconcat mode. ``'paged'`` (default) physically copies
+            data. ``'nomovevirtual'`` creates a reference catalog (near-instant,
+            but requires input images to stay on disk). ``'movevirtual'``
+            creates a virtual concatenation by moving subcube directories into
+            the output image.
     """
     ct = _ct()
     ia = ct.image()

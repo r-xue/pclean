@@ -180,7 +180,7 @@ def pclean(
       produced by each worker during continuum (MFS) imaging.
       Default ``False`` removes them after gathering.
     * **concat_mode** -- concatenation strategy for cube imaging.
-      ``'auto'`` (default) picks ``'nomovevirtual'`` when
+      ``'auto'`` (default) picks a virtual concatenation strategy when
       ``keep_subcubes=True``, ``'paged'`` otherwise.
       ``'paged'`` always does a full pixel copy.
       ``'virtual'`` creates a reference catalog (subcubes must stay).
