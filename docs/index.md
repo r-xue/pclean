@@ -34,3 +34,10 @@ benchmark_zfs_pools
 api/config
 api/pclean
 ```
+
+```{toctree}
+:hidden:
+:caption: Performance Reports
+
+reports/alma_pclean_vs_tclean_v1
+```
