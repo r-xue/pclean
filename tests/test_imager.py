@@ -99,29 +99,29 @@ class TestDispatch:
 
 
 class TestConvergenceOrder:
-    """update_mask() must be called before the first has_converged() check.
+    """The correct auto-multithresh sequence is:
 
-    Regression test for the v1 pclean bug where auto-multithresh returned
-    'Peak residual within mask : 0' on the first initminorcycle() because
-    setupmask() had not yet been called, causing cleanComplete() to signal
-    early convergence and skipping all Hogbom iterations.
+    1. initminorcycle()  — compute image statistics
+    2. setupmask()       — create/update mask from those stats
+    3. initminorcycle()  — recompute stats with the new mask
+    4. cleanComplete()   — evaluate convergence
+
+    Step 2 before step 1 triggers "Initminor Cycle has not been called yet".
+    Omitting step 2 causes the v1 bug (empty mask → peak=0 → premature stop).
     """
 
     def test_setupmask_called_before_first_clean_complete(self, mock_casatools):
-        """setupmask() must precede the first convergence cleanComplete() check.
-
-        run_major_cycle() also calls cleanComplete(lastcyclecheck=True), which
-        is a different query.  We only track the convergence call, which is
-        identified by the reachedMajorLimit= keyword (emitted by has_converged()).
-        """
+        """initminorcycle → setupmask → cleanComplete on the first iteration."""
         call_order: list[str] = []
 
+        mock_casatools.synthesisdeconvolver.return_value.initminorcycle.side_effect = (
+            lambda: call_order.append('initminorcycle') or {}
+        )
         mock_casatools.synthesisdeconvolver.return_value.setupmask.side_effect = (
             lambda: call_order.append('setupmask')
         )
 
         def _clean_complete(**kw):
-            # Only record the convergence-check call, not the lastcyclecheck one
             if 'reachedMajorLimit' in kw:
                 call_order.append('cleanComplete')
             return True
@@ -144,14 +144,21 @@ class TestConvergenceOrder:
             )
             SerialImager(params).run()
 
+        assert 'initminorcycle' in call_order, 'initminorcycle() was never called'
         assert 'setupmask' in call_order, 'setupmask() was never called'
         assert 'cleanComplete' in call_order, 'cleanComplete() was never called'
+
+        first_init = call_order.index('initminorcycle')
         first_setupmask = call_order.index('setupmask')
         first_clean_complete = call_order.index('cleanComplete')
+
+        assert first_init < first_setupmask, (
+            f'initminorcycle (pos {first_init}) must precede '
+            f'setupmask (pos {first_setupmask}); order: {call_order}'
+        )
         assert first_setupmask < first_clean_complete, (
-            f'setupmask() (pos {first_setupmask}) must precede '
-            f'cleanComplete() (pos {first_clean_complete}); '
-            f'full order: {call_order}'
+            f'setupmask (pos {first_setupmask}) must precede '
+            f'cleanComplete (pos {first_clean_complete}); order: {call_order}'
         )
 
     def test_niter_zero_skips_setupmask(self, mock_casatools):

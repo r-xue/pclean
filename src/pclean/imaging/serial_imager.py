@@ -189,18 +189,32 @@ class SerialImager:
                 did_work = True
         return did_work
 
+    def _init_minor_cycle(self) -> None:
+        """Run ``initminorcycle`` on each deconvolver and merge records.
+
+        This populates the image statistics that ``setupmask()`` and
+        ``cleanComplete()`` rely on.  It must be called before
+        ``update_mask()`` and before ``has_converged()``.
+        """
+        if self.ib_tool is None:
+            return
+        self.ib_tool.resetminorcycleinfo()
+        for fld in self.sd_tools:
+            initrec = self.sd_tools[fld].initminorcycle()
+            self.ib_tool.mergeinitrecord(initrec, int(fld))
+
     def has_converged(self, nmajor_limit: int = -1) -> bool:
         """Check convergence (peak residual, niter, threshold ...).
+
+        Calls ``initminorcycle`` internally (idempotent if already called
+        via :meth:`_init_minor_cycle`) then evaluates ``cleanComplete``.
 
         Returns:
             ``True`` when cleaning should stop.
         """
         if self.ib_tool is None:
             return True
-        self.ib_tool.resetminorcycleinfo()
-        for fld in self.sd_tools:
-            initrec = self.sd_tools[fld].initminorcycle()
-            self.ib_tool.mergeinitrecord(initrec, int(fld))
+        self._init_minor_cycle()
         reached_major = nmajor_limit > 0 and self._major_count >= nmajor_limit
         flag = self.ib_tool.cleanComplete(reachedMajorLimit=reached_major)
         self._converged = flag
@@ -256,21 +270,24 @@ class SerialImager:
 
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
-                # Populate the initial mask BEFORE the first convergence
-                # check.  auto-multithresh generates an empty mask on the
-                # very first initminorcycle() call (before setupmask() has
-                # run), which caused cleanComplete() to signal early stop
-                # in the v1 run ("Peak residual within mask : 0" despite a
-                # 75 mJy full-image peak and niter=50000).  CASA's tclean
-                # avoids this by running setupmask() internally before the
-                # initial hasConverged() evaluation.  We replicate that
-                # behaviour explicitly here.
-                self.update_mask()
-                converged = self.has_converged(nmajor)
+                # The correct sequence for auto-multithresh masking is:
+                #   1. initminorcycle()  — compute image statistics
+                #   2. setupmask()       — create/update mask using those stats
+                #   3. initminorcycle()  — recompute stats *with* the new mask
+                #   4. cleanComplete()   — evaluate convergence
+                #
+                # Step 2 before step 1 triggers "Initminor Cycle has not been
+                # called yet".  Omitting step 2 entirely causes the v1 bug
+                # (empty mask → peak=0 → premature cleanComplete).
+                # CASA's tclean runs the same four-step sequence internally.
+                self._init_minor_cycle()   # step 1
+                self.update_mask()         # step 2
+                converged = self.has_converged(nmajor)  # steps 3 + 4
                 while not converged:
                     did = self.run_minor_cycle()
                     if did:
                         self.run_major_cycle()
+                    self._init_minor_cycle()
                     self.update_mask()
                     converged = self.has_converged(nmajor) or (not did)
 
