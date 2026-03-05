@@ -371,7 +371,10 @@ class SerialImager:
             'fracbw',
         }
         wp = {k: v for k, v in self._weightpars.items() if k in _WEIGHT_KEYS}
-        self.si_tool.setweighting(**wp)
+
+        from pclean.parallel.worker_tasks import _safe_setweighting
+
+        _safe_setweighting(self.si_tool, wp)
 
     def _init_iteration_control(self) -> None:
         ct = _ct()

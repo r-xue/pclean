@@ -22,6 +22,50 @@ log = logging.getLogger(__name__)
 
 
 # ======================================================================
+# setweighting compatibility wrapper
+# ======================================================================
+
+
+def _safe_setweighting(si, wp: dict) -> None:
+    """Call ``si.setweighting(**wp)`` with a fallback for unpatched casatools.
+
+    If *wp* contains ``fracbw`` and the installed ``casatools`` does not
+    support it (i.e. the ``CAS-14520`` patch has not been applied),
+    the call will raise ``TypeError: unexpected keyword argument
+    'fracbw'``.  In that case we:
+
+    1. Drop the ``fracbw`` key.
+    2. If ``rmode == 'bwtaper'`` (briggsbwtaper), downgrade to
+       ``rmode='norm'`` (standard Briggs) so the C++ layer does not
+       receive an unrecognised mode string.
+    3. Log a warning so the user knows the weighting has been degraded.
+
+    This keeps pclean functional with *any* casatools build while still
+    using the optimal weighting when the patch is present.
+    """
+    try:
+        si.setweighting(**wp)
+    except TypeError as exc:
+        if 'fracbw' not in str(exc):
+            raise
+        wp = dict(wp)  # don't mutate caller's dict
+        wp.pop('fracbw', None)
+        if wp.get('rmode') == 'bwtaper':
+            wp['rmode'] = 'norm'
+            log.warning(
+                'casatools does not support the fracbw parameter '
+                '(CAS-14520 patch not applied) — falling back from '
+                'briggsbwtaper to standard briggs weighting',
+            )
+        else:
+            log.warning(
+                'casatools does not support the fracbw parameter '
+                '(CAS-14520 patch not applied) — dropping fracbw',
+            )
+        si.setweighting(**wp)
+
+
+# ======================================================================
 # Table cache helpers
 # ======================================================================
 
@@ -169,7 +213,7 @@ def make_partial_psf(bundle: dict) -> str:
     si = ct.synthesisimager()
     try:
         _select_and_define(si, bundle)
-        si.setweighting(**bundle['weightpars'])
+        _safe_setweighting(si, bundle['weightpars'])
         si.makepsf()
     finally:
         si.done()
@@ -194,7 +238,7 @@ def run_partial_major_cycle(
     si = ct.synthesisimager()
     try:
         _select_and_define(si, bundle)
-        si.setweighting(**bundle['weightpars'])
+        _safe_setweighting(si, bundle['weightpars'])
         si.executemajorcycle(controls=controls or {})
     finally:
         si.done()
@@ -248,7 +292,7 @@ class _WorkerGridder:
         self._imagename: str = bundle['allimpars']['0']['imagename']
         self.si = ct.synthesisimager()
         _select_and_define(self.si, bundle)
-        self.si.setweighting(**bundle['weightpars'])
+        _safe_setweighting(self.si, bundle['weightpars'])
 
     def make_psf(self) -> str:
         self.si.makepsf()
