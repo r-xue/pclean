@@ -44,12 +44,12 @@ class SelectionConfig(BaseModel):
         if isinstance(v, (list, tuple)):
             return [str(item) for item in v]
         return v
-    field: str = ''
+    field: str | list[str] = ''
     spw: str | list[str] = ''
-    timerange: str = ''
-    uvrange: str = ''
-    antenna: str = ''
-    scan: str = ''
+    timerange: str | list[str] = ''
+    uvrange: str | list[str] = ''
+    antenna: str | list[str] = ''
+    scan: str | list[str] = ''
     observation: str = ''
     intent: str = ''
     datacolumn: str = 'corrected'
@@ -487,24 +487,35 @@ class PcleanConfig(BaseModel):
         if not vis_list:
             vis_list = ['']
 
-        spw = sel.spw
-        spw_list = [spw] * len(vis_list) if isinstance(spw, str) else list(spw)
-        if len(spw_list) != len(vis_list):
-            raise ValueError(
-                f'spw list length ({len(spw_list)}) must match '
-                f'vis list length ({len(vis_list)})'
-            )
+        def _expand(name: str, value: str | list[str]) -> list[str]:
+            """Broadcast a scalar or validate a per-MS list."""
+            if isinstance(value, str):
+                return [value] * len(vis_list)
+            lst = list(value)
+            if len(lst) != len(vis_list):
+                raise ValueError(
+                    f'{name} list length ({len(lst)}) must match '
+                    f'vis list length ({len(vis_list)})'
+                )
+            return lst
+
+        field_list = _expand('field', sel.field)
+        spw_list = _expand('spw', sel.spw)
+        timerange_list = _expand('timerange', sel.timerange)
+        uvrange_list = _expand('uvrange', sel.uvrange)
+        antenna_list = _expand('antenna', sel.antenna)
+        scan_list = _expand('scan', sel.scan)
 
         result: dict[str, dict] = {}
         for idx, msname in enumerate(vis_list):
             result[f'ms{idx}'] = {
                 'msname': msname,
-                'field': sel.field,
+                'field': field_list[idx],
                 'spw': spw_list[idx],
-                'timestr': sel.timerange,
-                'uvdist': sel.uvrange,
-                'antenna': sel.antenna,
-                'scan': sel.scan,
+                'timestr': timerange_list[idx],
+                'uvdist': uvrange_list[idx],
+                'antenna': antenna_list[idx],
+                'scan': scan_list[idx],
                 'obs': sel.observation,
                 'state': sel.intent,
                 'taql': '',
