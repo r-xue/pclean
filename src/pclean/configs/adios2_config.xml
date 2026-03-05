@@ -1,5 +1,5 @@
-<!-- adios2_config.xml — place next to your .ms -->
 <?xml version="1.0"?>
+<!-- adios2_config.xml — place next to your .ms -->
 <adios-config>
   <io name="adios2stman">
     <engine type="BP5">
