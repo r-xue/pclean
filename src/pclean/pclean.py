@@ -125,6 +125,7 @@ def pclean(
     minpercentchange: float = 0.0,
     verbose: bool = False,
     fastnoise: bool = True,
+    python_automask: bool = True,
     # --- Misc ---------------------------------------------------------
     restart: bool = True,
     savemodel: str = 'none',
@@ -279,6 +280,7 @@ def pclean(
         minpercentchange=minpercentchange,
         verbose=verbose,
         fastnoise=fastnoise,
+        python_automask=python_automask,
         restart=restart,
         savemodel=savemodel,
         calcres=calcres,
