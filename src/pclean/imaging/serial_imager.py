@@ -201,7 +201,41 @@ class SerialImager:
         self.ib_tool.resetminorcycleinfo()
         for fld in self.sd_tools:
             initrec = self.sd_tools[fld].initminorcycle()
+            # ---- Work around CASA cleanComplete bug ----
+            # When nsigma=0 the user does *not* want nsigma-based
+            # stopping, but CASA computes NsigmaThreshold = 0*rms +
+            # median ≈ median (which can be slightly negative for
+            # noise-dominated channels).  In cleanComplete() the
+            # tolerance check
+            #   fabs(PeakRes - NsigmaThreshold) / NsigmaThreshold < tol
+            # divides by this negative value, producing a large
+            # negative quotient that is ALWAYS < tol → falsely
+            # triggers stop code 8.  The guard
+            #   ``if (NsigmaThreshold != 0.0)``
+            # was meant to prevent this, but it tests the *computed*
+            # threshold (≠ 0), not the user's nsigma parameter.
+            #
+            # Force nsigmathreshold = 0.0 so that:
+            #   (a) the tolerance check becomes fabs(…)/0.0 = inf,
+            #       which is NOT < tol → outer else-if not entered;
+            #   (b) the inner guard ``NsigmaThreshold != 0.0`` also
+            #       evaluates to False → stopCode 8 is never set.
+            if self.config.iteration.nsigma == 0.0:
+                initrec['nsigmathreshold'] = 0.0
             self.ib_tool.mergeinitrecord(initrec, int(fld))
+
+    _STOP_REASONS = {
+        0: 'not converged',
+        1: 'iteration limit',
+        2: 'threshold',
+        3: 'force stop',
+        4: 'no change in peak residual across two major cycles',
+        5: 'peak residual increased by more than 3x from previous cycle',
+        6: 'peak residual increased by more than 3x from minimum',
+        7: 'zero mask',
+        8: 'n-sigma threshold',
+        9: 'reached nmajor',
+    }
 
     def has_converged(self, nmajor_limit: int = -1) -> bool:
         """Check convergence (peak residual, niter, threshold ...).
@@ -217,6 +251,9 @@ class SerialImager:
         self._init_minor_cycle()
         reached_major = nmajor_limit > 0 and self._major_count >= nmajor_limit
         flag = self.ib_tool.cleanComplete(reachedMajorLimit=reached_major)
+        if flag > 0:
+            reason = self._STOP_REASONS.get(flag, f'unknown ({flag})')
+            log.info('Reached stopping criterion: %s', reason)
         self._converged = flag
         return flag
 
@@ -458,7 +495,33 @@ class SerialImager:
                 except OSError:
                     log.debug('Could not remove mask subtable: %s', mask_dir, exc_info=True)
 
+    @property
+    def _needs_python_normalization(self) -> bool:
+        """Whether Python-level normalizer calls are needed.
+
+        For cube specmodes the C++ ``CubeMajorCycleAlgorithm`` handles
+        PSF normalization, weight division, beam fitting, and residual
+        normalization internally during ``makepsf()`` and
+        ``executemajorcycle()``.  Calling the Python normalizer on top
+        of that would **double-normalise** the weight image, inflating
+        the residual by a factor of *sumwt* (~10^5–10^8 for typical
+        ALMA / VLA data).
+
+        Only MFS (and MTMFS, which implies MFS) require the explicit
+        Python-side normalizer calls — matching the ``divideInPython``
+        guard in CASA's ``tclean`` (``imager_base.py``).
+        """
+        deconv = self._decpars.get('0', {}).get('deconvolver', '')
+        return self._is_mfs or deconv == 'mtmfs'
+
     def _normalize_psf(self) -> None:
+        """Gather PSF weight, divide, fit beam, normalize weight image.
+
+        Skipped for cube specmodes — the C++ layer already handles this
+        inside ``makepsf()`` via ``CubeMajorCycleAlgorithm``.
+        """
+        if not self._needs_python_normalization:
+            return
         for fld in self.sn_tools:
             self.sn_tools[fld].gatherpsfweight()
             self.sn_tools[fld].dividepsfbyweight()
