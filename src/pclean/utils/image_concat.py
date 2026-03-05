@@ -21,17 +21,20 @@ When ``concat_mode='auto'`` (the default), the mode is derived from
 ``keep_subcubes``: ``True`` → virtual, ``False`` → paged.
 
 When multiple extensions need concatenating (e.g. ``.image``, ``.residual``,
-``.psf``, …), a ``ThreadPoolExecutor`` is used so that independent extensions
-are processed in parallel, limited by ``max_workers``.
+``.psf``, …), a ``ProcessPoolExecutor`` (``spawn`` start method) is used for
+paged mode so that each subprocess gets its own casacore ``TableCache`` and
+there is no shared C++ state between workers.  Virtual modes are run
+sequentially because they are near-instant and write shared catalog metadata.
 """
 
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 log = logging.getLogger(__name__)
 
@@ -41,12 +44,13 @@ log = logging.getLogger(__name__)
 # part of stripping all casacore-internal threading infrastructure
 # (issue #896).  casacore >= 3.4.0 (CASA 6.x) therefore has NO mutex
 # protecting the TableCache, making concurrent imageconcat() calls from
-# threads a data race.
+# threads a data race that causes a segfault (observed in CI with four
+# threads in imageconcat() simultaneously on paged mode).
 #
-# For *paged* mode we hold the lock only for the brief table-open phase
-# (tempclose=False keeps handles alive, pixel I/O happens after release).
-# For *virtual* modes the entire call must be serialised because the output
-# reference-catalog metadata is written incrementally and shared.
+# ia.imageconcat() is a monolithic SWIG-wrapped C++ call with no
+# internal thread guards: the table-cache registration and all pixel I/O
+# are interleaved and cannot be split at the Python level.  We therefore
+# serialise ALL modes through _tablelock, not just virtual modes.
 _tablelock = threading.Lock()
 
 _casatools = None
@@ -91,26 +95,14 @@ def concat_images(
     ct = _ct()
     ia = ct.image()
     t0 = time.monotonic()
-    _virtual = mode in ('nomovevirtual', 'movevirtual')
     try:
-        # Virtual modes mutate shared casacore catalog metadata for the
-        # entire call duration — must serialise fully.
-        # Paged mode only needs the lock to cover the table-registration
-        # phase; pixel I/O inside C++ is against independent files and
-        # safe to run concurrently once the cache entry is established.
-        if _virtual:
-            with _tablelock:
-                ia.imageconcat(
-                    outfile=outimage,
-                    infiles=inimages,
-                    axis=axis,
-                    relax=relax,
-                    overwrite=overwrite,
-                    tempclose=False,
-                    reorder=False,
-                    mode=mode,
-                )
-        else:
+        # ia.imageconcat() is a monolithic SWIG-wrapped C++ call: the
+        # casacore TableCache registration and all pixel I/O happen inside
+        # a single function with no thread-safety guarantees.  Concurrent
+        # calls from the ThreadPoolExecutor cause a segfault (observed in
+        # CI: four threads all in imageconcat simultaneously).  Serialise
+        # with _tablelock for all modes.
+        with _tablelock:
             ia.imageconcat(
                 outfile=outimage,
                 infiles=inimages,
@@ -133,6 +125,15 @@ def concat_images(
     )
 
 
+# Module-level worker function: must live at module scope to be picklable
+# by ProcessPoolExecutor when using the 'spawn' start method.
+def _concat_images_worker(args: tuple) -> str:
+    """Subprocess entry-point for parallel extension concatenation."""
+    outimage, inimages, mode = args
+    concat_images(outimage, inimages, mode=mode)
+    return outimage
+
+
 def concat_subcubes(
     base_imagename: str,
     nparts: int,
@@ -141,6 +142,9 @@ def concat_subcubes(
     max_workers: int = 4,
     # Deprecated — use *mode* instead.
     virtual: bool | None = None,
+    # Private seam for tests: inject ThreadPoolExecutor to avoid subprocess
+    # spawning while keeping mock-based assertions intact.
+    _pool_cls=None,
 ) -> None:
     """Concatenate all standard image products from numbered sub-cubes.
 
@@ -149,25 +153,24 @@ def concat_subcubes(
     The *mode* parameter is forwarded directly to ``ia.imageconcat()``:
 
     * ``'paged'`` — pixel data are physically copied (default, always safe).
+      Extensions are concatenated **in parallel** via ``ProcessPoolExecutor``
+      (``spawn`` context) so each subprocess owns an independent casacore
+      ``TableCache`` — true I/O parallelism, no shared C++ state.
     * ``'nomovevirtual'`` — lightweight reference catalog, near-instant but
-      subcube files **must remain on disk**.
+      subcube files **must remain on disk**.  Run **sequentially** because
+      virtual-catalog metadata is shared across calls.
     * ``'movevirtual'`` — renames subcubes into the output directory
-      (near-instant, subcubes are consumed).
+      (near-instant, subcubes are consumed).  Also run sequentially.
 
     .. deprecated::
         The *virtual* parameter is deprecated.  Pass *mode* explicitly.
-
-    Multiple extensions are concatenated **in parallel** using up to
-    *max_workers* threads.  CASA releases the GIL during I/O, so
-    thread-level parallelism effectively overlaps disk reads/writes
-    across independent image products.
 
     Args:
         base_imagename: The original ``imagename`` (without ``.subcube.N``).
         nparts: Number of sub-cubes.
         extensions: Image extensions to concatenate.  Defaults to a standard set.
         mode: CASA ``imageconcat`` mode string.
-        max_workers: Maximum parallel concatenation threads.
+        max_workers: Maximum parallel concatenation workers (paged mode only).
         virtual: **Deprecated.** ``True`` maps to ``mode='nomovevirtual'``.
     """
     # Backward compat: honour deprecated *virtual* flag if *mode* not overridden.
@@ -221,29 +224,50 @@ def concat_subcubes(
         log.warning('No subcube files found for concatenation')
         return
 
-    def _do_concat(ext: str, infiles: list[str], outfile: str) -> str:
-        concat_images(outfile, infiles, mode=mode)
-        return ext
-
-    # Run extensions in parallel (threads — each creates its own ia tool).
     failed: list[tuple[str, Exception]] = []
     worker_count = len(work)
-    if max_workers <= 0:
-        effective_workers = worker_count
-    else:
-        effective_workers = min(max_workers, worker_count)
-    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
-        future_to_ext = {
-            pool.submit(_do_concat, ext, infiles, outfile): ext
-            for ext, infiles, outfile in work
-        }
-        for future in as_completed(future_to_ext):
-            ext = future_to_ext[future]
+    effective_workers = worker_count if max_workers <= 0 else min(max_workers, worker_count)
+
+    _virtual = mode in ('nomovevirtual', 'movevirtual')
+    if _virtual:
+        # Virtual modes write shared casacore catalog metadata and are
+        # near-instant — run sequentially to avoid catalog corruption.
+        for ext, infiles, outfile in work:
             try:
-                future.result()
-            except Exception as exc:
+                concat_images(outfile, infiles, mode=mode)
+            except Exception as exc:  # pragma: no cover
                 log.warning('Failed to concatenate %s: %s', ext, exc)
                 failed.append((ext, exc))
+    else:
+        # Paged mode: spawn independent subprocesses so each gets its own
+        # casacore TableCache — true parallelism with no shared C++ state.
+        # ProcessPoolExecutor reuses workers across tasks so casatools is
+        # imported once per worker, not once per extension.
+        #
+        # _pool_cls is a private seam for tests: pass ThreadPoolExecutor to
+        # keep mock-based tests working without spawning real subprocesses.
+        if _pool_cls is None:
+            pool_factory = ProcessPoolExecutor
+            pool_kwargs: dict = {
+                'max_workers': effective_workers,
+                'mp_context': multiprocessing.get_context('spawn'),
+            }
+        else:
+            pool_factory = _pool_cls
+            pool_kwargs = {'max_workers': effective_workers}
+
+        with pool_factory(**pool_kwargs) as pool:
+            future_to_ext = {
+                pool.submit(_concat_images_worker, (outfile, infiles, mode)): ext
+                for ext, infiles, outfile in work
+            }
+            for future in as_completed(future_to_ext):
+                ext = future_to_ext[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    log.warning('Failed to concatenate %s: %s', ext, exc)
+                    failed.append((ext, exc))
 
     elapsed = time.monotonic() - t0
     ok_count = len(work) - len(failed)

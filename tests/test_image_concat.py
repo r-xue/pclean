@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import threading
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -90,7 +91,7 @@ class TestConcatImagesMode:
 
 
 class TestConcatImagesTableLock:
-    """Virtual modes hold _tablelock; paged mode does not block it."""
+    """All modes hold _tablelock to prevent concurrent imageconcat() segfaults."""
 
     def _check_lock_held(self, mode: str, expect_lock: bool):
         ct, ia = MagicMock(), MagicMock()
@@ -123,8 +124,10 @@ class TestConcatImagesTableLock:
             f'mode={mode!r}: expected lock_held={expect_lock}, got {lock_was_held[0]}'
         )
 
-    def test_paged_does_not_hold_lock(self):
-        self._check_lock_held('paged', expect_lock=False)
+    def test_paged_holds_lock(self):
+        # ia.imageconcat() is not thread-safe in any mode; paged must also
+        # serialise through _tablelock to prevent CI segfaults.
+        self._check_lock_held('paged', expect_lock=True)
 
     def test_nomovevirtual_holds_lock(self):
         self._check_lock_held('nomovevirtual', expect_lock=True)
@@ -202,7 +205,8 @@ class TestConcatSubcubesDiscovery:
             mod._casatools = None
             from pclean.utils.image_concat import concat_subcubes
 
-            concat_subcubes(base, nparts=2, extensions=['.image', '.psf', '.residual'])
+            concat_subcubes(base, nparts=2, extensions=['.image', '.psf', '.residual'],
+                            _pool_cls=ThreadPoolExecutor)
 
         # imageconcat called twice (image + psf), NOT for .residual
         assert ia.imageconcat.call_count == 2
@@ -240,7 +244,8 @@ class TestConcatSubcubesDiscovery:
             mod._casatools = None
             from pclean.utils.image_concat import concat_subcubes
 
-            concat_subcubes(base, nparts=nparts, extensions=['.image'])
+            concat_subcubes(base, nparts=nparts, extensions=['.image'],
+                            _pool_cls=ThreadPoolExecutor)
 
         infiles = ia.imageconcat.call_args.kwargs['infiles']
         expected = [f'{base}.subcube.{i}.image' for i in range(nparts)]
@@ -263,7 +268,8 @@ class TestConcatSubcubesMode:
             mod._casatools = None
             from pclean.utils.image_concat import concat_subcubes
 
-            concat_subcubes(base, nparts=1, extensions=['.image'], mode=mode)
+            concat_subcubes(base, nparts=1, extensions=['.image'], mode=mode,
+                            _pool_cls=ThreadPoolExecutor)
         return ia.imageconcat.call_args.kwargs['mode']
 
     def test_paged_mode_forwarded(self, tmp_path, mock_ct):
@@ -286,11 +292,9 @@ class TestConcatSubcubesMode:
             mod._casatools = None
             from pclean.utils.image_concat import concat_subcubes
 
-            concat_subcubes(base, nparts=1, extensions=['.image'])
-        assert ia.imageconcat.call_args.kwargs['mode'] == 'paged'
-
-
-# ---------------------------------------------------------------------------
+            concat_subcubes(base, nparts=1, extensions=['.image'],
+                            _pool_cls=ThreadPoolExecutor)
+        assert ia.imageconcat.call_args.kwargs['mode'] == 'paged'# ---------------------------------------------------------------------------
 # concat_subcubes — deprecated virtual= kwarg
 # ---------------------------------------------------------------------------
 
@@ -308,7 +312,8 @@ class TestConcatSubcubesDeprecatedVirtual:
 
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter('always')
-                concat_subcubes(base, nparts=1, extensions=['.image'], virtual=virtual_val)
+                concat_subcubes(base, nparts=1, extensions=['.image'], virtual=virtual_val,
+                                _pool_cls=ThreadPoolExecutor)
         return ia.imageconcat.call_args.kwargs['mode'], w
 
     def test_virtual_true_emits_deprecation_warning(self, tmp_path, mock_ct):
@@ -371,7 +376,8 @@ class TestConcatSubcubesParallel:
             mod._casatools = None
             from pclean.utils.image_concat import concat_subcubes
 
-            concat_subcubes(base, nparts=2, extensions=exts, max_workers=3)
+            concat_subcubes(base, nparts=2, extensions=exts, max_workers=3,
+                            _pool_cls=ThreadPoolExecutor)
 
         assert ia.imageconcat.call_count == 3
 
@@ -406,25 +412,27 @@ class TestConcatSubcubesParallel:
             import logging
 
             with caplog.at_level(logging.WARNING, logger='pclean.utils.image_concat'):
-                concat_subcubes(base, nparts=1, extensions=exts, max_workers=2)
+                concat_subcubes(base, nparts=1, extensions=exts, max_workers=2,
+                                _pool_cls=ThreadPoolExecutor)
 
         # Both were attempted
         assert call_count == 2
         assert 'Failed' in caplog.text
 
     def test_max_workers_capped_at_work_count(self, tmp_path, mock_ct):
-        """max_workers > number of extensions uses only as many threads as needed."""
+        """max_workers > number of extensions uses only as many processes as needed."""
         ct, ia = mock_ct
         base = str(tmp_path / 'cube')
         os.makedirs(f'{base}.subcube.0.image')  # only 1 extension
 
         submitted: list[int] = []
-        original = __import__('concurrent.futures', fromlist=['ThreadPoolExecutor']).ThreadPoolExecutor
+        original = __import__('concurrent.futures', fromlist=['ProcessPoolExecutor']).ProcessPoolExecutor
 
         class _CountingPool:
             def __init__(self, max_workers=None, **kw):
                 submitted.append(max_workers)
-                self._pool = original(max_workers=max_workers, **kw)
+                # Use ThreadPoolExecutor underneath so mocks work
+                self._pool = ThreadPoolExecutor(max_workers=max_workers)
 
             def __enter__(self):
                 self._pool.__enter__()
@@ -433,7 +441,7 @@ class TestConcatSubcubesParallel:
             def __exit__(self, *a):
                 return self._pool.__exit__(*a)
 
-        with patch('pclean.utils.image_concat.ThreadPoolExecutor', _CountingPool):
+        with patch('pclean.utils.image_concat.ProcessPoolExecutor', _CountingPool):
             with patch.dict('sys.modules', {'casatools': ct}):
                 import pclean.utils.image_concat as mod
 
