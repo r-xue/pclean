@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -233,13 +234,25 @@ class SerialImager:
             Convergence summary.
         """
         try:
+            t_total = time.monotonic()
+
+            t0 = time.monotonic()
             self.setup()
+            log.info('setup:          %.1fs', time.monotonic() - t0)
+
+            t0 = time.monotonic()
             self.make_psf()
+            log.info('make_psf:       %.1fs', time.monotonic() - t0)
+
+            t0 = time.monotonic()
             self.make_pb()
+            log.info('make_pb:        %.1fs', time.monotonic() - t0)
 
             # Initial residual (dirty image)
             if self._miscpars.get('calcres', True):
+                t0 = time.monotonic()
                 self.run_major_cycle(is_first=True)
+                log.info('major_cycle(0): %.1fs', time.monotonic() - t0)
 
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
@@ -256,10 +269,15 @@ class SerialImager:
                     converged = self.has_converged(nmajor) or (not did)
 
                 if self.config.deconvolution.restoration:
+                    t0 = time.monotonic()
                     self.restore()
+                    log.info('restore:        %.1fs', time.monotonic() - t0)
                 if self.config.deconvolution.pbcor:
+                    t0 = time.monotonic()
                     self.pbcor()
+                    log.info('pbcor:          %.1fs', time.monotonic() - t0)
 
+            log.info('run total:      %.1fs', time.monotonic() - t_total)
             return self._summary()
         finally:
             self.teardown()
