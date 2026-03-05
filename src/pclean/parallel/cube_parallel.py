@@ -28,6 +28,37 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _resolve_concat_mode(user_mode: str, keep_subcubes: bool) -> tuple[str, bool]:
+    """Resolve ``concat_mode`` config string to an ``ia.imageconcat`` mode.
+
+    Args:
+        user_mode: Value of ``ClusterConfig.concat_mode`` (``'auto'``,
+            ``'paged'``, ``'virtual'``, or ``'movevirtual'``).
+        keep_subcubes: Current value of ``ClusterConfig.keep_subcubes``.
+
+    Returns:
+        ``(mode, effective_keep)`` where *mode* is the string to pass to
+        ``ia.imageconcat(mode=...)`` and *effective_keep* is the (possibly
+        elevated) keep-subcubes flag.  ``'virtual'`` forces
+        ``effective_keep=True`` because reference catalogs require the
+        subcube files to stay on disk.
+    """
+    if user_mode == 'auto':
+        return ('nomovevirtual' if keep_subcubes else 'paged', keep_subcubes)
+    if user_mode == 'virtual':
+        if not keep_subcubes:
+            log.warning(
+                "concat_mode='virtual' requires subcubes to remain on "
+                "disk; forcing keep_subcubes=True for this run"
+            )
+        return ('nomovevirtual', True)
+    if user_mode == 'movevirtual':
+        # movevirtual renames subcubes into the output directory so they
+        # are consumed regardless of keep_subcubes.
+        return ('movevirtual', keep_subcubes)
+    # 'paged' and any unrecognised future value → safe physical copy
+    return ('paged', keep_subcubes)
+
 class ParallelCubeImager:
     """Channel-parallel cube CLEAN imager.
 
@@ -109,10 +140,17 @@ class ParallelCubeImager:
         # Workers write images using absolute paths, so we must use
         # the same absolute base name when looking for sub-cube products.
         abs_imgname = os.path.abspath(self.config.imagename)
-        concat_subcubes(abs_imgname, nparts)
+        mode, keep = _resolve_concat_mode(
+            self.config.cluster.concat_mode,
+            self.config.cluster.keep_subcubes,
+        )
+
+        concat_subcubes(abs_imgname, nparts, mode=mode)
 
         # 6. Clean up subcube artifacts unless keep_subcubes is set
-        if not self.config.cluster.keep_subcubes:
+        # movevirtual already consumed subcubes (renamed into output),
+        # so cleanup is only needed for 'paged' mode.
+        if not keep and mode != 'movevirtual':
             self._cleanup_subcubes(abs_imgname, nparts)
 
         return {

@@ -306,3 +306,96 @@ class TestKeepSubcubes:
         base = str(tmp_path / 'noimg')
         # Should not raise
         ParallelCubeImager._cleanup_subcubes(base, 4)
+
+
+class TestConcatModeConfig:
+    """concat_mode field in ClusterConfig / PcleanConfig."""
+
+    def test_default_is_auto(self):
+        from pclean.config import PcleanConfig
+
+        p = PcleanConfig.from_flat_kwargs(vis='a.ms')
+        assert p.cluster.concat_mode == 'auto'
+
+    def test_concat_mode_paged(self):
+        from pclean.config import PcleanConfig
+
+        p = PcleanConfig.from_flat_kwargs(vis='a.ms', concat_mode='paged')
+        assert p.cluster.concat_mode == 'paged'
+
+    def test_concat_mode_virtual(self):
+        from pclean.config import PcleanConfig
+
+        p = PcleanConfig.from_flat_kwargs(vis='a.ms', concat_mode='virtual')
+        assert p.cluster.concat_mode == 'virtual'
+
+    def test_concat_mode_movevirtual(self):
+        from pclean.config import PcleanConfig
+
+        p = PcleanConfig.from_flat_kwargs(vis='a.ms', concat_mode='movevirtual')
+        assert p.cluster.concat_mode == 'movevirtual'
+
+    def test_invalid_concat_mode_raises(self):
+        from pclean.config import PcleanConfig
+        import pydantic
+
+        with pytest.raises((pydantic.ValidationError, ValueError)):
+            PcleanConfig.from_flat_kwargs(vis='a.ms', concat_mode='badvalue')
+
+    def test_concat_mode_serialization_roundtrip(self):
+        from pclean.config import PcleanConfig
+
+        p = PcleanConfig.from_flat_kwargs(vis='a.ms', concat_mode='movevirtual')
+        d = p.model_dump()
+        p2 = PcleanConfig.model_validate(d)
+        assert p2.cluster.concat_mode == 'movevirtual'
+
+
+class TestResolveConcatMode:
+    """_resolve_concat_mode() maps user-level concat_mode to ia.imageconcat mode."""
+
+    def _resolve(self, user_mode, keep_subcubes):
+        from pclean.parallel.cube_parallel import _resolve_concat_mode
+
+        return _resolve_concat_mode(user_mode, keep_subcubes)
+
+    def test_auto_keep_false_gives_paged(self):
+        mode, keep = self._resolve('auto', False)
+        assert mode == 'paged'
+        assert keep is False
+
+    def test_auto_keep_true_gives_nomovevirtual(self):
+        mode, keep = self._resolve('auto', True)
+        assert mode == 'nomovevirtual'
+        assert keep is True
+
+    def test_virtual_gives_nomovevirtual(self):
+        mode, keep = self._resolve('virtual', True)
+        assert mode == 'nomovevirtual'
+
+    def test_virtual_forces_keep_true(self):
+        """concat_mode='virtual' must force keep=True even if False was passed."""
+        _, keep = self._resolve('virtual', False)
+        assert keep is True
+
+    def test_virtual_keep_false_logs_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger='pclean.parallel.cube_parallel'):
+            self._resolve('virtual', False)
+        assert 'forcing keep_subcubes=True' in caplog.text
+
+    def test_movevirtual_gives_movevirtual(self):
+        mode, keep = self._resolve('movevirtual', False)
+        assert mode == 'movevirtual'
+        assert keep is False  # movevirtual consumes subcubes; keep unchanged
+
+    def test_paged_explicit(self):
+        mode, keep = self._resolve('paged', False)
+        assert mode == 'paged'
+
+    def test_unknown_mode_falls_back_to_paged(self):
+        """Unrecognised future values must default to safe 'paged' mode."""
+        mode, _ = self._resolve('supersonic', False)
+        assert mode == 'paged'
+

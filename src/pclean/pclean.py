@@ -34,12 +34,12 @@ def pclean(
     # --- Data selection ------------------------------------------------
     vis: str | Path | Sequence[str | Path] = '',
     selectdata: bool = True,
-    field: str = '',
+    field: str | Sequence[str] = '',
     spw: str | Sequence[str] = '',
-    timerange: str = '',
-    uvrange: str = '',
-    antenna: str = '',
-    scan: str = '',
+    timerange: str | Sequence[str] = '',
+    uvrange: str | Sequence[str] = '',
+    antenna: str | Sequence[str] = '',
+    scan: str | Sequence[str] = '',
     observation: str = '',
     intent: str = '',
     datacolumn: str = 'corrected',
@@ -141,6 +141,7 @@ def pclean(
     cube_chunksize: int = -1,
     keep_subcubes: bool = False,
     keep_partimages: bool = False,
+    concat_mode: str = 'auto',
     # Cluster backend
     cluster_type: str = 'local',
     # SLURM options (cluster_type='slurm')
@@ -178,6 +179,12 @@ def pclean(
     * **keep_partimages** -- if ``True``, preserve partial images
       produced by each worker during continuum (MFS) imaging.
       Default ``False`` removes them after gathering.
+    * **concat_mode** -- concatenation strategy for cube imaging.
+      ``'auto'`` (default) picks a virtual concatenation strategy when
+      ``keep_subcubes=True``, ``'paged'`` otherwise.
+      ``'paged'`` always does a full pixel copy.
+      ``'virtual'`` creates a reference catalog (subcubes must stay).
+      ``'movevirtual'`` renames subcubes into the output (near-instant).
 
     * **config** -- a :class:`~pclean.config.PcleanConfig` instance, a
       path to a YAML config file, or ``None``.  When provided, the
@@ -286,6 +293,7 @@ def pclean(
         cube_chunksize=cube_chunksize,
         keep_subcubes=keep_subcubes,
         keep_partimages=keep_partimages,
+        concat_mode=concat_mode,
         cluster_type=cluster_type,
         slurm_queue=slurm_queue,
         slurm_account=slurm_account,

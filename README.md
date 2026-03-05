@@ -79,6 +79,7 @@ Beyond the standard `tclean` parameters, `pclean` accepts:
 | `cube_chunksize` | `-1` | Channels per sub-cube task. `-1` assigns one sub-cube per worker; `1` assigns one per channel. |
 | `keep_subcubes` | `False` | Retain intermediate sub-cube images after concatenation. |
 | `keep_partimages` | `False` | Retain partial images after continuum gather. |
+| `concat_mode` | `'auto'` | Concatenation strategy: `'auto'` (derive from `keep_subcubes`), `'paged'` (physical copy), `'virtual'` (reference catalog), `'movevirtual'` (rename into output). |
 
 ## Architecture
 

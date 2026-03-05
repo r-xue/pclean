@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -122,13 +123,13 @@ class SerialImager:
 
     def make_psf(self) -> None:
         """Compute the PSF (and gather/normalize for MFS)."""
-        log.info('Computing PSF …')
+        log.info('%s Computing PSF …', self._tag)
         self.si_tool.makepsf()
         self._normalize_psf()
 
     def make_pb(self) -> None:
         """Compute the primary beam."""
-        log.info('Computing PB …')
+        log.info('%s Computing PB …', self._tag)
         try:
             self.si_tool.makepb()
         except Exception:
@@ -142,7 +143,7 @@ class SerialImager:
             is_first: If ``True`` this is the initial residual computation
                 (model is zero).
         """
-        log.info('Major cycle %d …', self._major_count)
+        log.info('%s Major cycle %d …', self._tag, self._major_count)
         if self._is_mfs:
             self._pre_major_normalize()
 
@@ -188,20 +189,71 @@ class SerialImager:
                 did_work = True
         return did_work
 
+    def _init_minor_cycle(self) -> None:
+        """Run ``initminorcycle`` on each deconvolver and merge records.
+
+        This populates the image statistics that ``setupmask()`` and
+        ``cleanComplete()`` rely on.  It must be called before
+        ``update_mask()`` and before ``has_converged()``.
+        """
+        if self.ib_tool is None:
+            return
+        self.ib_tool.resetminorcycleinfo()
+        for fld in self.sd_tools:
+            initrec = self.sd_tools[fld].initminorcycle()
+            # ---- Work around CASA cleanComplete bug ----
+            # When nsigma=0 the user does *not* want nsigma-based
+            # stopping, but CASA computes NsigmaThreshold = 0*rms +
+            # median ≈ median (which can be slightly negative for
+            # noise-dominated channels).  In cleanComplete() the
+            # tolerance check
+            #   fabs(PeakRes - NsigmaThreshold) / NsigmaThreshold < tol
+            # divides by this negative value, producing a large
+            # negative quotient that is ALWAYS < tol → falsely
+            # triggers stop code 8.  The guard
+            #   ``if (NsigmaThreshold != 0.0)``
+            # was meant to prevent this, but it tests the *computed*
+            # threshold (≠ 0), not the user's nsigma parameter.
+            #
+            # Force nsigmathreshold = 0.0 so that:
+            #   (a) the tolerance check becomes fabs(…)/0.0 = inf,
+            #       which is NOT < tol → outer else-if not entered;
+            #   (b) the inner guard ``NsigmaThreshold != 0.0`` also
+            #       evaluates to False → stopCode 8 is never set.
+            if self.config.iteration.nsigma == 0.0:
+                initrec['nsigmathreshold'] = 0.0
+            self.ib_tool.mergeinitrecord(initrec, int(fld))
+
+    _STOP_REASONS = {
+        0: 'not converged',
+        1: 'iteration limit',
+        2: 'threshold',
+        3: 'force stop',
+        4: 'no change in peak residual across two major cycles',
+        5: 'peak residual increased by more than 3x from previous cycle',
+        6: 'peak residual increased by more than 3x from minimum',
+        7: 'zero mask',
+        8: 'n-sigma threshold',
+        9: 'reached nmajor',
+    }
+
     def has_converged(self, nmajor_limit: int = -1) -> bool:
         """Check convergence (peak residual, niter, threshold ...).
+
+        Calls ``initminorcycle`` internally (idempotent if already called
+        via :meth:`_init_minor_cycle`) then evaluates ``cleanComplete``.
 
         Returns:
             ``True`` when cleaning should stop.
         """
         if self.ib_tool is None:
             return True
-        self.ib_tool.resetminorcycleinfo()
-        for fld in self.sd_tools:
-            initrec = self.sd_tools[fld].initminorcycle()
-            self.ib_tool.mergeinitrecord(initrec, int(fld))
+        self._init_minor_cycle()
         reached_major = nmajor_limit > 0 and self._major_count >= nmajor_limit
         flag = self.ib_tool.cleanComplete(reachedMajorLimit=reached_major)
+        if flag > 0:
+            reason = self._STOP_REASONS.get(flag, f'unknown ({flag})')
+            log.info('%s Reached stopping criterion: %s', self._tag, reason)
         self._converged = flag
         return flag
 
@@ -212,13 +264,13 @@ class SerialImager:
 
     def restore(self) -> None:
         """Restore the final CLEAN images."""
-        log.info('Restoring images …')
+        log.info('%s Restoring images …', self._tag)
         for fld in self.sd_tools:
             self.sd_tools[fld].restore()
 
     def pbcor(self) -> None:
         """Apply primary-beam correction."""
-        log.info('PB-correcting images …')
+        log.info('%s PB-correcting images …', self._tag)
         for fld in self.sd_tools:
             self.sd_tools[fld].pbcor()
 
@@ -233,33 +285,59 @@ class SerialImager:
             Convergence summary.
         """
         try:
+            t_total = time.monotonic()
+
+            t0 = time.monotonic()
             self.setup()
+            log.info('%s setup:          %.1fs', self._tag, time.monotonic() - t0)
+
+            t0 = time.monotonic()
             self.make_psf()
+            log.info('%s make_psf:       %.1fs', self._tag, time.monotonic() - t0)
+
+            t0 = time.monotonic()
             self.make_pb()
+            log.info('%s make_pb:        %.1fs', self._tag, time.monotonic() - t0)
 
             # Initial residual (dirty image)
             if self._miscpars.get('calcres', True):
+                t0 = time.monotonic()
                 self.run_major_cycle(is_first=True)
+                log.info('%s major_cycle(0): %.1fs', self._tag, time.monotonic() - t0)
 
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
-                # CASA order: hasConverged (initminorcycle) → updateMask
-                # (setupmask) → hasConverged (re-check after mask)
-                converged = self.has_converged(nmajor)
-                self.update_mask()
-                converged = self.has_converged(nmajor)
+                # The correct sequence for auto-multithresh masking is:
+                #   1. initminorcycle()  — compute image statistics
+                #   2. setupmask()       — create/update mask using those stats
+                #   3. initminorcycle()  — recompute stats *with* the new mask
+                #   4. cleanComplete()   — evaluate convergence
+                #
+                # Step 2 before step 1 triggers "Initminor Cycle has not been
+                # called yet".  Omitting step 2 entirely causes the v1 bug
+                # (empty mask → peak=0 → premature cleanComplete).
+                # CASA's tclean runs the same four-step sequence internally.
+                self._init_minor_cycle()   # step 1
+                self.update_mask()         # step 2
+                converged = self.has_converged(nmajor)  # steps 3 + 4
                 while not converged:
                     did = self.run_minor_cycle()
                     if did:
                         self.run_major_cycle()
+                    self._init_minor_cycle()
                     self.update_mask()
                     converged = self.has_converged(nmajor) or (not did)
 
                 if self.config.deconvolution.restoration:
+                    t0 = time.monotonic()
                     self.restore()
+                    log.info('%s restore:        %.1fs', self._tag, time.monotonic() - t0)
                 if self.config.deconvolution.pbcor:
+                    t0 = time.monotonic()
                     self.pbcor()
+                    log.info('%s pbcor:          %.1fs', self._tag, time.monotonic() - t0)
 
+            log.info('%s run total:      %.1fs', self._tag, time.monotonic() - t_total)
             return self._summary()
         finally:
             self.teardown()
@@ -267,6 +345,17 @@ class SerialImager:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @property
+    def _tag(self) -> str:
+        """Short identifier for log messages (e.g. ``[subcube.ch042]``)."""
+        name = os.path.basename(self.config.imagename)
+        # For subcubes the imagename looks like <base>.subcube.<suffix>.
+        # Extract "subcube.<suffix>" so workers are easy to tell apart.
+        idx = name.find('.subcube.')
+        if idx >= 0:
+            return f'[{name[idx + 1:]}]'
+        return f'[{name}]'
 
     @property
     def _is_mfs(self) -> bool:
@@ -307,21 +396,31 @@ class SerialImager:
         ct = _ct()
         self.si_tool = ct.synthesisimager()
 
-        # Disable cube gridding only for single-channel (or MFS) subcubes.
-        # With nchan<=1 the CubeMajorCycleAlgorithm path is pure overhead
-        # (a redundant secondary imager that re-opens the MS) and triggers
-        # the ADIOS2 SetSelection shape mismatch on indirect-array columns.
-        # For multi-channel subcubes we must keep cube gridding enabled so
-        # the C++ layer can chunk channels within available RAM.
+        # Disable cube gridding for single-channel (or MFS) subcubes.
+        # With nchan<=1 the CubeMajorCycleAlgorithm path is pure overhead:
+        #
+        #   1. It creates a redundant secondary imager that re-opens the MS
+        #      (unnecessary when there is only one channel to grid).
+        #   2. Its internal copyMask/SetupNewTable for the residual mask0
+        #      subtable hits a casacore table-cache bug on the 2nd+ major
+        #      cycle — the mask0 created during gridding is still in the
+        #      process-global table cache when copyMask tries to SetupNew-
+        #      Table for the same path, producing a noisy WARN per subcube
+        #      per major cycle.
+        #   3. For ADIOS2-backed MS files, the secondary imager triggers
+        #      a SetSelection shape mismatch on indirect-array columns.
+        #
+        # For multi-channel subcubes we keep cube gridding enabled so the
+        # C++ layer can chunk channels within available RAM.
         nchan_this = self.config.image.nchan
-        if getattr(self, '_adios2_detected', False) and nchan_this <= 1:
+        if nchan_this <= 1:
             try:
                 self.si_tool.setcubegridding(False)
-                log.info('Disabled cube gridding (nchan=%d, ADIOS2 MS)', nchan_this)
+                log.info('%s Disabled cube gridding (nchan=%d)', self._tag, nchan_this)
             except AttributeError:
                 log.debug(
                     'synthesisimager.setcubegridding() not available '
-                    '— falling back to OMP workaround only',
+                    '— falling back to default cube gridding path',
                 )
 
         # Select data from each MS
@@ -371,6 +470,8 @@ class SerialImager:
             'fracbw',
         }
         wp = {k: v for k, v in self._weightpars.items() if k in _WEIGHT_KEYS}
+        if 'fracbw' in wp:
+            log.info('setweighting: fracbw=%.6g (briggsbwtaper taper)', wp['fracbw'])
 
         from pclean.parallel.worker_tasks import _safe_setweighting
 
@@ -415,7 +516,33 @@ class SerialImager:
                 except OSError:
                     log.debug('Could not remove mask subtable: %s', mask_dir, exc_info=True)
 
+    @property
+    def _needs_python_normalization(self) -> bool:
+        """Whether Python-level normalizer calls are needed.
+
+        For cube specmodes the C++ ``CubeMajorCycleAlgorithm`` handles
+        PSF normalization, weight division, beam fitting, and residual
+        normalization internally during ``makepsf()`` and
+        ``executemajorcycle()``.  Calling the Python normalizer on top
+        of that would **double-normalise** the weight image, inflating
+        the residual by a factor of *sumwt* (~10^5–10^8 for typical
+        ALMA / VLA data).
+
+        Only MFS (and MTMFS, which implies MFS) require the explicit
+        Python-side normalizer calls — matching the ``divideInPython``
+        guard in CASA's ``tclean`` (``imager_base.py``).
+        """
+        deconv = self._decpars.get('0', {}).get('deconvolver', '')
+        return self._is_mfs or deconv == 'mtmfs'
+
     def _normalize_psf(self) -> None:
+        """Gather PSF weight, divide, fit beam, normalize weight image.
+
+        Skipped for cube specmodes — the C++ layer already handles this
+        inside ``makepsf()`` via ``CubeMajorCycleAlgorithm``.
+        """
+        if not self._needs_python_normalization:
+            return
         for fld in self.sn_tools:
             self.sn_tools[fld].gatherpsfweight()
             self.sn_tools[fld].dividepsfbyweight()

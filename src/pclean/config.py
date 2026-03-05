@@ -44,12 +44,12 @@ class SelectionConfig(BaseModel):
         if isinstance(v, (list, tuple)):
             return [str(item) for item in v]
         return v
-    field: str = ''
+    field: str | list[str] = ''
     spw: str | list[str] = ''
-    timerange: str = ''
-    uvrange: str = ''
-    antenna: str = ''
-    scan: str = ''
+    timerange: str | list[str] = ''
+    uvrange: str | list[str] = ''
+    antenna: str | list[str] = ''
+    scan: str | list[str] = ''
     observation: str = ''
     intent: str = ''
     datacolumn: str = 'corrected'
@@ -219,6 +219,7 @@ class ClusterConfig(BaseModel):
     cube_chunksize: int = -1
     keep_subcubes: bool = False
     keep_partimages: bool = False
+    concat_mode: Literal['auto', 'paged', 'virtual', 'movevirtual'] = 'auto'
     slurm: SlurmConfig = Field(default_factory=SlurmConfig)
 
 
@@ -375,6 +376,7 @@ class PcleanConfig(BaseModel):
             'parallel', 'nworkers', 'scheduler_address',
             'threads_per_worker', 'memory_limit', 'local_directory',
             'cube_chunksize', 'keep_subcubes', 'keep_partimages',
+            'concat_mode',
         }
         # Cluster type
         _clu_type_key = 'cluster_type'
@@ -485,24 +487,35 @@ class PcleanConfig(BaseModel):
         if not vis_list:
             vis_list = ['']
 
-        spw = sel.spw
-        spw_list = [spw] * len(vis_list) if isinstance(spw, str) else list(spw)
-        if len(spw_list) != len(vis_list):
-            raise ValueError(
-                f'spw list length ({len(spw_list)}) must match '
-                f'vis list length ({len(vis_list)})'
-            )
+        def _expand(name: str, value: str | list[str]) -> list[str]:
+            """Broadcast a scalar or validate a per-MS list."""
+            if isinstance(value, str):
+                return [value] * len(vis_list)
+            lst = list(value)
+            if len(lst) != len(vis_list):
+                raise ValueError(
+                    f'{name} list length ({len(lst)}) must match '
+                    f'vis list length ({len(vis_list)})'
+                )
+            return lst
+
+        field_list = _expand('field', sel.field)
+        spw_list = _expand('spw', sel.spw)
+        timerange_list = _expand('timerange', sel.timerange)
+        uvrange_list = _expand('uvrange', sel.uvrange)
+        antenna_list = _expand('antenna', sel.antenna)
+        scan_list = _expand('scan', sel.scan)
 
         result: dict[str, dict] = {}
         for idx, msname in enumerate(vis_list):
             result[f'ms{idx}'] = {
                 'msname': msname,
-                'field': sel.field,
+                'field': field_list[idx],
                 'spw': spw_list[idx],
-                'timestr': sel.timerange,
-                'uvdist': sel.uvrange,
-                'antenna': sel.antenna,
-                'scan': sel.scan,
+                'timestr': timerange_list[idx],
+                'uvdist': uvrange_list[idx],
+                'antenna': antenna_list[idx],
+                'scan': scan_list[idx],
                 'obs': sel.observation,
                 'state': sel.intent,
                 'taql': '',
@@ -858,32 +871,26 @@ def _deep_update(base: dict, overlay: dict) -> dict:
     return base
 
 
-def _resolve_package_yaml(rel_path: str) -> Path | None:
-    """Resolve a YAML file bundled inside the ``pclean`` package.
+def _read_package_text(rel_path: str) -> str | None:
+    """Read text content of a file bundled inside the ``pclean`` package.
 
-    Uses :mod:`importlib.resources` so the lookup works both in editable
-    installs and after ``pip install``.
+    Uses :meth:`importlib.resources.Traversable.read_text`, which works
+    correctly in both editable installs and zip-packaged distributions
+    without requiring a temporary filesystem extraction.
 
     Args:
         rel_path: Path relative to the ``pclean`` package root
             (e.g. ``'configs/presets/vlass.yaml'``).
 
     Returns:
-        Resolved filesystem :class:`Path`, or ``None`` if not found.
+        File contents as a :class:`str`, or ``None`` if not found.
     """
-    from importlib.resources import as_file, files
-
-    pkg_resource = files('pclean').joinpath(rel_path)
     try:
-        # as_file() ensures the resource is available on the filesystem
-        # (important for zip-packaged distributions).
-        ctx = as_file(pkg_resource)
-        resolved = ctx.__enter__()  # noqa: PLC2801
-        if resolved.exists():
-            return resolved
+        from importlib.resources import files
+
+        return files('pclean').joinpath(rel_path).read_text(encoding='utf-8')
     except (FileNotFoundError, TypeError):
-        pass
-    return None
+        return None
 
 
 def load_defaults() -> PcleanConfig:
@@ -895,10 +902,12 @@ def load_defaults() -> PcleanConfig:
     Returns:
         A ``PcleanConfig`` with the reference default values.
     """
-    pkg_path = _resolve_package_yaml('configs/defaults.yaml')
-    if pkg_path is not None:
-        log.info('Loading bundled defaults from %s', pkg_path)
-        return PcleanConfig.from_yaml(pkg_path)
+    import yaml
+
+    text = _read_package_text('configs/defaults.yaml')
+    if text is not None:
+        log.info('Loading bundled defaults from package resource')
+        return PcleanConfig.model_validate(yaml.safe_load(text) or {})
 
     # Fallback: CWD
     cwd_path = Path('configs') / 'defaults.yaml'
@@ -918,11 +927,13 @@ def load_preset(name: str) -> PcleanConfig:
     Args:
         name: Preset name (without ``.yaml`` extension).
     """
-    # 1. Packaged preset (works after pip install)
-    pkg_path = _resolve_package_yaml(f'configs/presets/{name}.yaml')
-    if pkg_path is not None:
-        log.info('Loading preset %s from package: %s', name, pkg_path)
-        return PcleanConfig.from_yaml(pkg_path)
+    import yaml
+
+    # 1. Packaged preset — read text directly; works in editable + zip installs
+    text = _read_package_text(f'configs/presets/{name}.yaml')
+    if text is not None:
+        log.info('Loading preset %r from package resource', name)
+        return PcleanConfig.model_validate(yaml.safe_load(text) or {})
 
     # 2. CWD fallback paths
     candidates = [
@@ -936,3 +947,31 @@ def load_preset(name: str) -> PcleanConfig:
 
     searched = ['<package>/configs/presets/'] + [str(c) for c in candidates]
     raise FileNotFoundError(f'Preset {name!r} not found; searched: {", ".join(searched)}')
+
+
+def get_adios2_config_path() -> Path | None:
+    """Return the filesystem path of the bundled ADIOS2 XML config.
+
+    The file enables lossless blosc2/zstd compression and sets sensible
+    buffer sizes for CASA Measurement Sets stored in ADIOS2 format.
+    Point ADIOS2 at it via the environment variable before opening any MS::
+
+        import os
+        from pclean.config import get_adios2_config_path
+
+        path = get_adios2_config_path()
+        if path is not None:
+            os.environ.setdefault('ADIOS2_INIT_FILE', str(path))
+
+    Returns:
+        Resolved filesystem :class:`Path`, or ``None`` if not found.
+    """
+    try:
+        from importlib.resources import files
+
+        candidate = Path(str(files('pclean').joinpath('configs/adios2_config.xml')))
+        if candidate.exists():
+            return candidate
+    except Exception:  # pragma: no cover
+        pass
+    return None

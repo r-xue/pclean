@@ -96,3 +96,94 @@ class TestDispatch:
                 parallel=False,
             )
             assert result['imagename'] == 'serial_test'
+
+
+class TestConvergenceOrder:
+    """The correct auto-multithresh sequence is:
+
+    1. initminorcycle()  — compute image statistics
+    2. setupmask()       — create/update mask from those stats
+    3. initminorcycle()  — recompute stats with the new mask
+    4. cleanComplete()   — evaluate convergence
+
+    Step 2 before step 1 triggers "Initminor Cycle has not been called yet".
+    Omitting step 2 causes the v1 bug (empty mask → peak=0 → premature stop).
+    """
+
+    def test_setupmask_called_before_first_clean_complete(self, mock_casatools):
+        """initminorcycle → setupmask → cleanComplete on the first iteration."""
+        call_order: list[str] = []
+
+        mock_casatools.synthesisdeconvolver.return_value.initminorcycle.side_effect = (
+            lambda: call_order.append('initminorcycle') or {}
+        )
+        mock_casatools.synthesisdeconvolver.return_value.setupmask.side_effect = (
+            lambda: call_order.append('setupmask')
+        )
+
+        def _clean_complete(**kw):
+            if 'reachedMajorLimit' in kw:
+                call_order.append('cleanComplete')
+            return True
+
+        mock_casatools.iterbotsink.return_value.cleanComplete.side_effect = _clean_complete
+
+        with patch.dict('sys.modules', {'casatools': mock_casatools}):
+            import pclean.imaging.serial_imager as mod
+
+            mod._casatools = None
+
+            from pclean.imaging.serial_imager import SerialImager
+            from pclean.config import PcleanConfig
+
+            params = PcleanConfig.from_flat_kwargs(
+                vis='test.ms',
+                imagename='conv_test',
+                niter=100,
+                specmode='mfs',
+            )
+            SerialImager(params).run()
+
+        assert 'initminorcycle' in call_order, 'initminorcycle() was never called'
+        assert 'setupmask' in call_order, 'setupmask() was never called'
+        assert 'cleanComplete' in call_order, 'cleanComplete() was never called'
+
+        first_init = call_order.index('initminorcycle')
+        first_setupmask = call_order.index('setupmask')
+        first_clean_complete = call_order.index('cleanComplete')
+
+        assert first_init < first_setupmask, (
+            f'initminorcycle (pos {first_init}) must precede '
+            f'setupmask (pos {first_setupmask}); order: {call_order}'
+        )
+        assert first_setupmask < first_clean_complete, (
+            f'setupmask (pos {first_setupmask}) must precede '
+            f'cleanComplete (pos {first_clean_complete}); order: {call_order}'
+        )
+
+    def test_niter_zero_skips_setupmask(self, mock_casatools):
+        """When niter=0 the deconvolution block is skipped entirely."""
+        call_order: list[str] = []
+        mock_casatools.synthesisdeconvolver.return_value.setupmask.side_effect = (
+            lambda: call_order.append('setupmask')
+        )
+
+        with patch.dict('sys.modules', {'casatools': mock_casatools}):
+            import pclean.imaging.serial_imager as mod
+
+            mod._casatools = None
+
+            from pclean.imaging.serial_imager import SerialImager
+            from pclean.config import PcleanConfig
+
+            params = PcleanConfig.from_flat_kwargs(
+                vis='test.ms',
+                imagename='niter0_test',
+                niter=0,
+                specmode='mfs',
+            )
+            SerialImager(params).run()
+
+        assert 'setupmask' not in call_order, (
+            'setupmask() should not be called when niter=0'
+        )

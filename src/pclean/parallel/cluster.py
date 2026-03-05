@@ -34,9 +34,32 @@ COMM_TIMEOUT = 600  # client wait timeout threshold to initialize connection to 
 # a MemoryError logged as a tornado ERROR.  The run still completes, but the
 # log is alarming.
 #
-# The fix wraps distributed.comm.tcp.read_bytes_rw at the module level.
-# TCP.read() resolves 'read_bytes_rw' from the module globals at every call,
-# so replacing the module attribute is enough — no library file is touched.
+# The fix wraps distributed.comm.tcp.read_bytes_rw AND the numpy host_array
+# allocator.  Both patches are needed because:
+#
+#   1. read_bytes_rw:  TCP.read() resolves this name from the tcp module
+#      globals at every call, so replacing the attribute works.
+#
+#   2. host_array:  In some Dask versions / code paths the original
+#      read_bytes_rw body is reached directly (e.g. via closures or
+#      inlined buffers).  Patching host_array provides a second safety
+#      net so that numpy.empty(7.27 EiB) never happens.
+#
+# We also must be careful about *how* we raise StreamClosedError.
+# Dask's convert_stream_closed_error() inspects exc.real_error:
+#
+#     if hasattr(exc, "real_error"):
+#         if exc.real_error is None:
+#             raise CommClosedError(...) from exc
+#         exc = exc.real_error           # <-- replaces exc !
+#     ...
+#     raise CommClosedError(...) from exc
+#
+# If we pass a *string* as real_error, ``exc`` becomes that string and
+# ``raise ... from <string>`` fails with:
+#     TypeError: exception causes must derive from BaseException
+#
+# Fix: always pass ``real_error=None`` so the first branch fires.
 
 _MAX_FRAME_BYTES = 1 << 30  # 1 GiB — no real Dask message exceeds this
 _dask_tcp_patched = False
@@ -49,25 +72,60 @@ def _patch_dask_tcp() -> None:
         return
     try:
         import distributed.comm.tcp as _tcp
+        import distributed.protocol.utils as _proto_utils
         from tornado.iostream import StreamClosedError as _SCE
 
-        _orig = _tcp.read_bytes_rw
+        # --- Patch 1: read_bytes_rw (primary guard) ----------------------
+        _orig_read = _tcp.read_bytes_rw
 
         async def _safe_read_bytes_rw(stream, n: int):
             if n > _MAX_FRAME_BYTES:
-                raise _SCE(
-                    f"Implausible TCP frame size {n:,} B "
-                    f"(> {_MAX_FRAME_BYTES:,} B limit) — "
-                    "likely garbage bytes from a stale/reset connection; "
-                    "dropping socket"
+                log.debug(
+                    "Rejected implausible TCP frame size %s B "
+                    "(> %s B limit) — stale/reset connection",
+                    f"{n:,}",
+                    f"{_MAX_FRAME_BYTES:,}",
                 )
-            return await _orig(stream, n)
+                # real_error=None → convert_stream_closed_error takes the
+                # ``exc.real_error is None`` branch and chains correctly.
+                raise _SCE(real_error=None)
+            return await _orig_read(stream, n)
 
         _tcp.read_bytes_rw = _safe_read_bytes_rw
+
+        # --- Patch 2: host_array (secondary guard) -----------------------
+        # Catches the case where the original read_bytes_rw body is reached
+        # without going through our wrapper (e.g. closure / import caching).
+        _orig_host_array = _proto_utils.host_array
+
+        def _safe_host_array(n):
+            if n > _MAX_FRAME_BYTES:
+                log.debug(
+                    "host_array: rejected %s B allocation "
+                    "(> %s B limit)",
+                    f"{n:,}",
+                    f"{_MAX_FRAME_BYTES:,}",
+                )
+                raise MemoryError(
+                    f"Implausible allocation request {n:,} B "
+                    f"(> {_MAX_FRAME_BYTES:,} B limit) — "
+                    "likely garbage TCP frame from stale connection"
+                )
+            return _orig_host_array(n)
+
+        _proto_utils.host_array = _safe_host_array
+        # Also replace the reference imported into tcp.py (if any)
+        if hasattr(_tcp, 'host_array'):
+            _tcp.host_array = _safe_host_array
+
         _dask_tcp_patched = True
-        log.debug("Patched distributed.comm.tcp.read_bytes_rw with frame-size guard")
+        log.debug("Patched distributed.comm.tcp.read_bytes_rw + host_array with frame-size guard")
     except Exception as e:  # noqa: BLE001
-        log.warning("Could not patch distributed.comm.tcp.read_bytes_rw: %s", e)
+        log.warning(
+            "Could not patch distributed.comm.tcp.read_bytes_rw and "
+            "distributed.protocol.utils.host_array: %s",
+            e,
+        )
 
 
 def _dd():

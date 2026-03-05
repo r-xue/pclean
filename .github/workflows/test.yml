@@ -82,11 +82,8 @@ jobs:
           git lfs pull
 
       # ---- Tests -------------------------------------------------------
-      - name: Run tests
-        run: pixi run -e test pytest tests/ -v --tb=short
-
       - name: Run tests with coverage
-        run: pixi run -e test pytest tests/ -v --cov=pclean --cov-report=term-missing --cov-report=xml
+        run: pixi run -e test pytest tests/ -v --tb=short --cov=pclean --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage artifact
         if: matrix.os == 'ubuntu-latest'
