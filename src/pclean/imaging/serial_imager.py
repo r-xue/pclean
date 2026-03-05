@@ -86,6 +86,7 @@ class SerialImager:
         self._major_count = 0
         self._converged = False
         self._adios2_detected = False
+        self._cube_gridding_disabled = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -144,7 +145,7 @@ class SerialImager:
                 (model is zero).
         """
         log.info('%s Major cycle %d …', self._tag, self._major_count)
-        if self._is_mfs:
+        if self._needs_python_normalization:
             self._pre_major_normalize()
 
         last = False
@@ -169,7 +170,7 @@ class SerialImager:
         if self.ib_tool is not None:
             self.ib_tool.endmajorcycle()
 
-        if self._is_mfs:
+        if self._needs_python_normalization:
             self._post_major_normalize()
 
     def run_minor_cycle(self) -> bool:
@@ -416,6 +417,7 @@ class SerialImager:
         if nchan_this <= 1:
             try:
                 self.si_tool.setcubegridding(False)
+                self._cube_gridding_disabled = True
                 log.info('%s Disabled cube gridding (nchan=%d)', self._tag, nchan_this)
             except AttributeError:
                 log.debug(
@@ -528,12 +530,15 @@ class SerialImager:
         the residual by a factor of *sumwt* (~10^5–10^8 for typical
         ALMA / VLA data).
 
-        Only MFS (and MTMFS, which implies MFS) require the explicit
-        Python-side normalizer calls — matching the ``divideInPython``
-        guard in CASA's ``tclean`` (``imager_base.py``).
+        Python-side normalizer calls are needed when:
+          - specmode is MFS (or MTMFS),  OR
+          - cube gridding was explicitly disabled via
+            ``setcubegridding(False)`` for single-channel subcubes,
+            because the ``CubeMajorCycleAlgorithm`` is no longer active
+            and the C++ layer behaves like the non-cube path.
         """
         deconv = self._decpars.get('0', {}).get('deconvolver', '')
-        return self._is_mfs or deconv == 'mtmfs'
+        return self._is_mfs or deconv == 'mtmfs' or self._cube_gridding_disabled
 
     def _normalize_psf(self) -> None:
         """Gather PSF weight, divide, fit beam, normalize weight image.
