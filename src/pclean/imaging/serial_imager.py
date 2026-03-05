@@ -256,9 +256,15 @@ class SerialImager:
 
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
-                # CASA order: hasConverged (initminorcycle) → updateMask
-                # (setupmask) → hasConverged (re-check after mask)
-                converged = self.has_converged(nmajor)
+                # Populate the initial mask BEFORE the first convergence
+                # check.  auto-multithresh generates an empty mask on the
+                # very first initminorcycle() call (before setupmask() has
+                # run), which caused cleanComplete() to signal early stop
+                # in the v1 run ("Peak residual within mask : 0" despite a
+                # 75 mJy full-image peak and niter=50000).  CASA's tclean
+                # avoids this by running setupmask() internally before the
+                # initial hasConverged() evaluation.  We replicate that
+                # behaviour explicitly here.
                 self.update_mask()
                 converged = self.has_converged(nmajor)
                 while not converged:
