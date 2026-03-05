@@ -143,8 +143,8 @@ bounded, not CPU bounded.
 
 ### Option A — Parallel extension concat (implemented)
 
-Use `ThreadPoolExecutor` to run independent extensions simultaneously.
-CASA releases the GIL during I/O, so threads achieve real parallelism.
+Use `ProcessPoolExecutor` (spawn context) to run independent extensions in parallel worker processes.
+CASA releases the GIL during I/O, so processes can overlap I/O and CPU work effectively.
 With `max_workers=4`, estimated wall time drops from ~3h 20m to ~65 min.
 
 ### Option B — Virtual / reference concat (implemented)

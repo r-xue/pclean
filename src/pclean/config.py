@@ -874,11 +874,9 @@ def _deep_update(base: dict, overlay: dict) -> dict:
 def _read_package_text(rel_path: str) -> str | None:
     """Read text content of a file bundled inside the ``pclean`` package.
 
-    Uses :meth:`importlib.resources.Traversable.read_text` which works
+    Uses :meth:`importlib.resources.Traversable.read_text`, which works
     correctly in both editable installs and zip-packaged distributions
-    **without** requiring a temporary filesystem extraction.  Prefer
-    this over :func:`_extract_package_resource` whenever the caller only
-    needs to read the file contents (e.g. YAML parsing).
+    without requiring a temporary filesystem extraction.
 
     Args:
         rel_path: Path relative to the ``pclean`` package root
