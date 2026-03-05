@@ -29,10 +29,25 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 log = logging.getLogger(__name__)
+
+# casacore maintained a process-global `TableCache` (std::map) that is
+# registered/looked-up on every table open.  A mutex was present from
+# 2011 (commit 68d3f2d) until April 2021, when PR #1095 removed it as
+# part of stripping all casacore-internal threading infrastructure
+# (issue #896).  casacore >= 3.4.0 (CASA 6.x) therefore has NO mutex
+# protecting the TableCache, making concurrent imageconcat() calls from
+# threads a data race.
+#
+# For *paged* mode we hold the lock only for the brief table-open phase
+# (tempclose=False keeps handles alive, pixel I/O happens after release).
+# For *virtual* modes the entire call must be serialised because the output
+# reference-catalog metadata is written incrementally and shared.
+_tablelock = threading.Lock()
 
 _casatools = None
 
@@ -74,17 +89,36 @@ def concat_images(
     ct = _ct()
     ia = ct.image()
     t0 = time.monotonic()
+    _virtual = mode in ('nomovevirtual', 'movevirtual')
     try:
-        ia.imageconcat(
-            outfile=outimage,
-            infiles=inimages,
-            axis=axis,
-            relax=relax,
-            overwrite=overwrite,
-            tempclose=False,
-            reorder=False,
-            mode=mode,
-        )
+        # Virtual modes mutate shared casacore catalog metadata for the
+        # entire call duration — must serialise fully.
+        # Paged mode only needs the lock to cover the table-registration
+        # phase; pixel I/O inside C++ is against independent files and
+        # safe to run concurrently once the cache entry is established.
+        if _virtual:
+            with _tablelock:
+                ia.imageconcat(
+                    outfile=outimage,
+                    infiles=inimages,
+                    axis=axis,
+                    relax=relax,
+                    overwrite=overwrite,
+                    tempclose=False,
+                    reorder=False,
+                    mode=mode,
+                )
+        else:
+            ia.imageconcat(
+                outfile=outimage,
+                infiles=inimages,
+                axis=axis,
+                relax=relax,
+                overwrite=overwrite,
+                tempclose=False,
+                reorder=False,
+                mode=mode,
+            )
     finally:
         ia.done()
     elapsed = time.monotonic() - t0
