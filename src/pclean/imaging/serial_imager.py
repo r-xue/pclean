@@ -371,6 +371,8 @@ class SerialImager:
             'fracbw',
         }
         wp = {k: v for k, v in self._weightpars.items() if k in _WEIGHT_KEYS}
+        if 'fracbw' in wp:
+            log.info('setweighting: fracbw=%.6g (briggsbwtaper taper)', wp['fracbw'])
         self.si_tool.setweighting(**wp)
 
     def _init_iteration_control(self) -> None:
