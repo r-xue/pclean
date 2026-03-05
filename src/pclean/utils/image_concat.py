@@ -225,7 +225,12 @@ def concat_subcubes(
 
     # Run extensions in parallel (threads — each creates its own ia tool).
     failed: list[tuple[str, Exception]] = []
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(work))) as pool:
+    worker_count = len(work)
+    if max_workers <= 0:
+        effective_workers = worker_count
+    else:
+        effective_workers = min(max_workers, worker_count)
+    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
         future_to_ext = {
             pool.submit(_do_concat, ext, infiles, outfile): ext
             for ext, infiles, outfile in work
