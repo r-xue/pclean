@@ -81,6 +81,42 @@ class TestPlaneStats:
         assert abs(rms_fast - 1.0) < 0.1
         assert abs(rms_slow - 1.0) < 0.15
 
+    def test_mad_robust_to_emission(self):
+        """MAD-based RMS should be robust to emission contamination.
+
+        With ~25% emission pixels (mimicking a bright CO channel),
+        np.std would give an inflated RMS, but MAD stays close to the
+        true noise because it has a 50% breakdown point.
+        """
+        rng = np.random.default_rng(42)
+        noise_sigma = 0.5
+        data = rng.normal(0.0, noise_sigma, (256, 256)).astype(np.float32)
+        # inject emission into ~25% of pixels (top quartile)
+        q75 = np.percentile(data, 75)
+        data[data > q75] += 3.0
+        _, _, rms, _ = _plane_stats(data, fastnoise=True)
+        # MAD-based RMS should still be close to true noise
+        assert rms < noise_sigma * 1.5, (
+            f"rms={rms:.4f} too high — not robust to emission"
+        )
+
+    def test_fastnoise_false_with_prev_mask(self):
+        """fastnoise=False should exclude previously-masked regions."""
+        rng = np.random.default_rng(7)
+        noise_sigma = 0.5
+        data = rng.normal(0.0, noise_sigma, (256, 256)).astype(np.float32)
+        # inject strong emission in a region
+        data[100:150, 100:150] = 5.0
+        # create a mask covering the emission
+        prev_mask = np.zeros_like(data)
+        prev_mask[100:150, 100:150] = 1.0
+        _, _, rms, _ = _plane_stats(data, fastnoise=False,
+                                    prev_mask=prev_mask)
+        # with emission excluded, RMS should be close to true noise
+        assert abs(rms - noise_sigma) < 0.15, (
+            f"rms={rms:.4f} should be ~{noise_sigma} with emission masked"
+        )
+
 
 # ======================================================================
 # _prune_regions

@@ -111,19 +111,33 @@ def _plane_stats(
     residual: Plane,
     *,
     fastnoise: bool = True,
+    prev_mask: Plane | None = None,
 ) -> tuple[float, float, float, float]:
     """Compute (absmax, median, robust_rms, classic_rms) for one plane.
 
-    With ``fastnoise=True`` the classic RMS (std) is used as a proxy
-    for the noise, matching CASA's ``fastnoise`` path.  Otherwise the
-    MAD-based robust estimator is used.
+    Both ``fastnoise`` paths use the MAD-based robust RMS estimator
+    (σ ≈ 1.4826 × MAD), matching CASA C++ ``SDMaskHandler`` which
+    always uses ``medabsdevmed * 1.4826`` from ``ImageStatsCalculator``
+    with ``robust=true``.
+
+    With ``fastnoise=True`` the MAD is computed on **all** pixels
+    (source emission included); MAD is inherently robust to outliers.
+    With ``fastnoise=False`` pixels inside *prev_mask* are excluded
+    before computing the MAD, giving a source-free noise estimate.
     """
     absmax = float(np.max(np.abs(residual)))
     median = float(np.median(residual))
     if fastnoise:
-        rms = float(np.std(residual))
-    else:
         rms = _robust_rms(residual)
+    else:
+        if prev_mask is not None and np.any(prev_mask > 0.5):
+            source_free = residual[prev_mask < 0.5]
+            if source_free.size > 0:
+                rms = _robust_rms(source_free)
+            else:
+                rms = _robust_rms(residual)
+        else:
+            rms = _robust_rms(residual)
     return absmax, median, rms, rms
 
 
@@ -147,9 +161,13 @@ def _prune_regions(
     component_sizes = ndi_sum(mask, labeled, range(1, n_features + 1))
     # Build a look-up table: label → keep (1) or discard (0)
     keep = np.zeros(n_features + 1, dtype=np.float32)
+    n_kept = 0
     for i, size in enumerate(component_sizes, start=1):
         if size >= min_size:
             keep[i] = 1.0
+            n_kept += 1
+    log.debug('prune: %d / %d regions kept (min_size=%.1f pix)',
+              n_kept, n_features, min_size)
     return keep[labeled]
 
 
@@ -248,10 +266,14 @@ def automask_plane(
     absmax, median, rms, _ = _plane_stats(
         masked_residual[pb_mask] if pb_mask.any() else masked_residual,
         fastnoise=cfg.fastnoise,
+        prev_mask=(state.prevmask[pb_mask] if (state.prevmask is not None
+                   and pb_mask.any()) else state.prevmask),
     )
 
     # Nothing to mask if the residual is effectively zero
     if absmax == 0:
+        log.info('automask iter %d: residual is zero — returning empty mask',
+                 state.iteration)
         state.prevmask = np.zeros(residual.shape, dtype=np.float32)
         state.iteration += 1
         return state.prevmask
@@ -260,23 +282,34 @@ def automask_plane(
     noise_thresh = cfg.noisethreshold * rms + median
     low_noise_thresh = cfg.lownoisethreshold * rms + median
     mask_threshold = max(sidelobe_thresh, noise_thresh)
+    threshold_source = ('sidelobe' if sidelobe_thresh >= noise_thresh
+                        else 'noise')
 
-    log.debug(
-        'automask: absmax=%.4g median=%.4g rms=%.4g '
-        'sidelobe_thresh=%.4g noise_thresh=%.4g mask_thresh=%.4g',
-        absmax, median, rms, sidelobe_thresh, noise_thresh, mask_threshold,
+    log.info(
+        'automask iter %d: absmax=%.4g  median=%.4g  rms=%.4g  '
+        'sidelobe_thresh=%.4g  noise_thresh=%.4g  '
+        'mask_thresh=%.4g (%s-limited)',
+        state.iteration, absmax, median, rms,
+        sidelobe_thresh, noise_thresh, mask_threshold, threshold_source,
     )
 
     # ---- Stage 1: threshold mask + prune ---------------------------------
     threshold_mask = (masked_residual >= mask_threshold).astype(np.float32)
+    n_thresh_raw = int(threshold_mask.sum())
     prune_size = cfg.minbeamfrac * beam_area_pix
     if prune_size > 0:
         threshold_mask = _prune_regions(threshold_mask, prune_size)
+    n_thresh_pruned = int(threshold_mask.sum())
+    log.info('automask iter %d: threshold → %d pix, after prune → %d pix '
+             '(prune_size=%.1f)',
+             state.iteration, n_thresh_raw, n_thresh_pruned, prune_size)
 
     # ---- Stage 2: smooth + binarise --------------------------------------
     smoothed_mask = _smooth_and_cut(
         threshold_mask, beam_sigma_pix, cfg.smoothfactor, cfg.cutthreshold,
     )
+    log.info('automask iter %d: smooth+cut → %d pix',
+             state.iteration, int(smoothed_mask.sum()))
 
     # ---- Stage 3: grow (binary dilation) — skip on first iteration -------
     grown_mask = np.zeros_like(residual)
@@ -284,8 +317,10 @@ def automask_plane(
         # Constraint: residual above low-noise threshold
         low_mask_thresh = max(sidelobe_thresh, low_noise_thresh)
         constraint = (masked_residual >= low_mask_thresh).astype(np.float32)
+        n_constraint = int(constraint.sum())
 
         grown_mask = _grow_mask(state.prevmask, constraint, cfg.growiterations)
+        n_grown_raw = int(grown_mask.sum())
 
         # Prune the grown mask
         if cfg.dogrowprune and prune_size > 0:
@@ -295,6 +330,13 @@ def automask_plane(
         grown_mask = _smooth_and_cut(
             grown_mask, beam_sigma_pix, cfg.smoothfactor, cfg.cutthreshold,
         )
+        log.info('automask iter %d: grow (%d iters, %d constraint pix) → '
+                 '%d pix raw, %d pix after prune+smooth',
+                 state.iteration, cfg.growiterations, n_constraint,
+                 n_grown_raw, int(grown_mask.sum()))
+    else:
+        log.info('automask iter %d: grow skipped (first iteration)',
+                 state.iteration)
 
     # ---- Stage 4: combine ------------------------------------------------
     if state.posmask is None:
@@ -317,6 +359,9 @@ def automask_plane(
         neg_mask = _smooth_and_cut(
             neg_threshold_mask, beam_sigma_pix, cfg.smoothfactor, cfg.cutthreshold,
         )
+        log.info('automask iter %d: negative mask → %d pix '
+                 '(neg_thresh=%.4g)',
+                 state.iteration, int(neg_mask.sum()), neg_mask_threshold)
 
     # ---- Stage 6: final combination -------------------------------------
     final_mask: Plane
@@ -330,14 +375,16 @@ def automask_plane(
 
     # ---- Update state ----------------------------------------------------
     # Check percent change for early-skip optimisation
-    if state.prevmask is not None and cfg.minpercentchange > 0:
+    change_pct = 0.0
+    if state.prevmask is not None:
         total_pix = float(pb_mask.sum()) if pb_mask.any() else float(residual.size)
         if total_pix > 0:
             change_pct = 100.0 * float(np.sum(np.abs(final_mask - state.prevmask))) / total_pix
-            if change_pct < cfg.minpercentchange:
+            if cfg.minpercentchange > 0 and change_pct < cfg.minpercentchange:
                 state.skip = True
-                log.debug('automask: mask change %.2f%% < minpercentchange %.2f%% — skipping',
-                          change_pct, cfg.minpercentchange)
+                log.info('automask iter %d: mask change %.2f%% < '
+                         'minpercentchange %.2f%% — flagging skip',
+                         state.iteration, change_pct, cfg.minpercentchange)
 
     state.prevmask = final_mask.copy()
     state.iteration += 1
@@ -345,7 +392,9 @@ def automask_plane(
     npix = int(final_mask.sum())
     total = int(pb_mask.sum()) if pb_mask.any() else residual.size
     pct = 100.0 * npix / total if total > 0 else 0.0
-    log.debug('automask: %d / %d pixels in mask (%.2f%%)', npix, total, pct)
+    log.info('automask iter %d: final mask %d / %d pix (%.2f%%), '
+             'change from prev %.2f%%',
+             state.iteration - 1, npix, total, pct, change_pct)
 
     return final_mask
 
@@ -392,26 +441,35 @@ def beam_info_from_image(imagename: str) -> tuple[float, float, tuple[float, flo
 
         ia.close()
 
-        # Sidelobe level from PSF
+        # Sidelobe level — matches SIImageStore::getPSFSidelobeLevel().
+        #
+        # C++ creates a Gaussian PSF model per channel, computes
+        #   delobed = PSF - GaussianModel
+        # and returns max(|min(PSF)|, max(delobed)).
+        # A plain central-box exclusion misses sidelobes close to the main
+        # lobe, systematically under-estimating the threshold and inflating
+        # the mask compared to the C++ automask.
         ia.open(imagename + '.psf')
         psf_data = ia.getchunk()
         ia.close()
-        # PSF peak should be ~1.0 after normalisation; sidelobe = max of |PSF|
-        # excluding central region
         psf_plane = psf_data[:, :, 0, 0].astype(np.float32)
         peak = psf_plane.max()
         if peak > 0:
             psf_norm = psf_plane / peak
         else:
             psf_norm = psf_plane
-        # Mask out central beam region (within ~2 beam FWHM)
         cy, cx = psf_norm.shape[0] // 2, psf_norm.shape[1] // 2
-        r_mask = max(int(major_pix * 2), 5)
-        y_lo, y_hi = max(cy - r_mask, 0), min(cy + r_mask + 1, psf_norm.shape[0])
-        x_lo, x_hi = max(cx - r_mask, 0), min(cx + r_mask + 1, psf_norm.shape[1])
-        psf_outer = psf_norm.copy()
-        psf_outer[y_lo:y_hi, x_lo:x_hi] = 0.0
-        sidelobe_level = float(np.max(np.abs(psf_outer)))
+        delta = np.zeros_like(psf_norm)
+        delta[cy, cx] = 1.0
+        gaussian_model = gaussian_filter(delta, sigma=(sigma_y, sigma_x))
+        g_peak = float(gaussian_model.max())
+        if g_peak > 0:
+            gaussian_model /= g_peak
+        delobed = psf_norm - gaussian_model
+        sidelobe_level = float(max(
+            abs(float(np.min(psf_norm))),
+            float(np.max(delobed)),
+        ))
 
         return beam_area_pix, sidelobe_level, (sigma_y, sigma_x)
     finally:

@@ -331,6 +331,10 @@ class SerialImager:
                 self.run_major_cycle(is_first=True)
                 log.info('%s major_cycle(0): %.1fs', self._tag, time.monotonic() - t0)
 
+            # Pre-create .mask so the first Python automask can write to it
+            if self._use_python_automask:
+                self._create_mask_image()
+
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
                 # The correct sequence for auto-multithresh masking is:
@@ -651,7 +655,18 @@ class SerialImager:
 
             ia.close()
 
-            # Sidelobe level from the PSF
+            # Sidelobe level from the PSF — matches SIImageStore::getPSFSidelobeLevel().
+            #
+            # The C++ implementation:
+            #   1. Builds a Gaussian PSF model using the fitted beam
+            #   2. Computes delobed = PSF - Gaussian_model
+            #   3. sidelobe_level = max(|min(PSF)|, max(delobed))
+            #
+            # This correctly captures sidelobes that are very close to the
+            # main lobe (within ~2× FWHM), which a simple central-box
+            # exclusion scheme misses.  Under-estimating the sidelobe level
+            # switches the threshold from sidelobe-limited to noise-limited,
+            # producing a much lower mask_threshold and an over-grown mask.
             ia.open(psf_name)
             psf_data = ia.getchunk()
             ia.close()
@@ -661,16 +676,23 @@ class SerialImager:
                 psf_norm = psf_plane / peak
             else:
                 psf_norm = psf_plane
-            # Mask out the central beam region (~2× FWHM)
+
+            from scipy.ndimage import gaussian_filter as _gf
             cy, cx = psf_norm.shape[0] // 2, psf_norm.shape[1] // 2
-            r_mask = max(int(major_pix * 2), 5)
-            y_lo = max(cy - r_mask, 0)
-            y_hi = min(cy + r_mask + 1, psf_norm.shape[0])
-            x_lo = max(cx - r_mask, 0)
-            x_hi = min(cx + r_mask + 1, psf_norm.shape[1])
-            psf_outer = psf_norm.copy()
-            psf_outer[y_lo:y_hi, x_lo:x_hi] = 0.0
-            self._sidelobe_level = float(np.max(np.abs(psf_outer)))
+            # Create a Gaussian PSF model: delta → Gaussian with beam sigma
+            delta = np.zeros_like(psf_norm)
+            delta[cy, cx] = 1.0
+            gaussian_model = _gf(delta, sigma=(sigma_y, sigma_x))
+            g_peak = float(gaussian_model.max())
+            if g_peak > 0:
+                gaussian_model /= g_peak
+            # delobed = PSF - GaussianModel  (as in MakeGaussianPSF subtraction)
+            delobed = psf_norm - gaussian_model
+            # sidelobe = max(|min(PSF)|, max(PSF − Gaussian_model))
+            self._sidelobe_level = float(max(
+                abs(float(np.min(psf_norm))),
+                float(np.max(delobed)),
+            ))
 
             log.info(
                 '%s beam info: area=%.1f pix, sidelobe=%.4f, '
@@ -681,6 +703,42 @@ class SerialImager:
         finally:
             ia.done()
 
+    def _create_mask_image(self) -> None:
+        """Create blank ``.mask`` images for each field (all zeros).
+
+        Must be called after the first major cycle so that ``.residual``
+        exists to serve as a template.  Without this the first
+        ``_update_mask_python()`` cannot write the computed mask,
+        leaving the C++ deconvolver with no mask constraint —
+        it then cleans the entire image, preventing convergence.
+        """
+        ct = _ct()
+        for fld in self.sd_tools:
+            imagename = self._impars[fld]['imagename']
+            mask_path = f'{imagename}.mask'
+            if os.path.isdir(mask_path):
+                continue  # already exists
+            residual_path = f'{imagename}.residual'
+            if not os.path.isdir(residual_path):
+                continue  # nothing to copy from
+            ia = ct.image()
+            try:
+                ia.open(residual_path)
+                ia.subimage(outfile=mask_path, dropdeg=False, overwrite=True)
+                ia.close()
+                # Fill mask with zeros (no pixels selected for cleaning)
+                ia.open(mask_path)
+                ia.set(0.0)
+                ia.close()
+            except Exception:
+                log.warning(
+                    '%s Could not create mask image %s',
+                    self._tag, mask_path,
+                )
+            finally:
+                ia.done()
+        log.debug('%s Created blank .mask images', self._tag)
+
     def _update_mask_python(self) -> None:
         """Compute the auto-multithresh mask in Python and write to .mask.
 
@@ -688,6 +746,9 @@ class SerialImager:
         ``automask_plane()``, and writes it to the ``.mask`` image.
         Then calls ``setupmask()`` so the C++ deconvolver picks up
         the externally written mask.
+
+        Skips recomputation when ``state.skip`` is True (mask change
+        was below ``minpercentchange`` on the previous iteration).
         """
         from pclean.imaging.automask import automask_plane, read_plane, write_plane
 
@@ -696,6 +757,21 @@ class SerialImager:
 
         for fld in self.sd_tools:
             imagename = self._impars[fld]['imagename']
+
+            state = self._automask_state.get(fld)
+            if state is None:
+                from pclean.imaging.automask import AutoMaskState
+                state = AutoMaskState()
+                self._automask_state[fld] = state
+
+            # Skip mask recomputation if flagged as stable
+            if state.skip:
+                log.info(
+                    '%s Python automask (field %s): skipped '
+                    '(mask stable, change < minpercentchange)',
+                    self._tag, fld,
+                )
+                continue
 
             t0 = time.monotonic()
 
@@ -710,12 +786,6 @@ class SerialImager:
                     pb = read_plane(pb_path)
                 except Exception:
                     log.debug('Could not read PB image %s', pb_path)
-
-            state = self._automask_state.get(fld)
-            if state is None:
-                from pclean.imaging.automask import AutoMaskState
-                state = AutoMaskState()
-                self._automask_state[fld] = state
 
             # Compute the mask
             mask = automask_plane(
