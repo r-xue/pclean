@@ -860,32 +860,28 @@ def _deep_update(base: dict, overlay: dict) -> dict:
     return base
 
 
-def _resolve_package_config(rel_path: str) -> Path | None:
-    """Resolve a YAML file bundled inside the ``pclean`` package.
+def _read_package_text(rel_path: str) -> str | None:
+    """Read text content of a file bundled inside the ``pclean`` package.
 
-    Uses :mod:`importlib.resources` so the lookup works both in editable
-    installs and after ``pip install``.
+    Uses :meth:`importlib.resources.Traversable.read_text` which works
+    correctly in both editable installs and zip-packaged distributions
+    **without** requiring a temporary filesystem extraction.  Prefer
+    this over :func:`_extract_package_resource` whenever the caller only
+    needs to read the file contents (e.g. YAML parsing).
 
     Args:
         rel_path: Path relative to the ``pclean`` package root
             (e.g. ``'configs/presets/vlass.yaml'``).
 
     Returns:
-        Resolved filesystem :class:`Path`, or ``None`` if not found.
+        File contents as a :class:`str`, or ``None`` if not found.
     """
-    from importlib.resources import as_file, files
-
-    pkg_resource = files('pclean').joinpath(rel_path)
     try:
-        # as_file() ensures the resource is available on the filesystem
-        # (important for zip-packaged distributions).
-        ctx = as_file(pkg_resource)
-        resolved = ctx.__enter__()  # noqa: PLC2801
-        if resolved.exists():
-            return resolved
+        from importlib.resources import files
+
+        return files('pclean').joinpath(rel_path).read_text(encoding='utf-8')
     except (FileNotFoundError, TypeError):
-        pass
-    return None
+        return None
 
 
 def load_defaults() -> PcleanConfig:
@@ -897,10 +893,12 @@ def load_defaults() -> PcleanConfig:
     Returns:
         A ``PcleanConfig`` with the reference default values.
     """
-    pkg_path = _resolve_package_config('configs/defaults.yaml')
-    if pkg_path is not None:
-        log.info('Loading bundled defaults from %s', pkg_path)
-        return PcleanConfig.from_yaml(pkg_path)
+    import yaml
+
+    text = _read_package_text('configs/defaults.yaml')
+    if text is not None:
+        log.info('Loading bundled defaults from package resource')
+        return PcleanConfig.model_validate(yaml.safe_load(text) or {})
 
     # Fallback: CWD
     cwd_path = Path('configs') / 'defaults.yaml'
@@ -920,11 +918,13 @@ def load_preset(name: str) -> PcleanConfig:
     Args:
         name: Preset name (without ``.yaml`` extension).
     """
-    # 1. Packaged preset (works after pip install)
-    pkg_path = _resolve_package_config(f'configs/presets/{name}.yaml')
-    if pkg_path is not None:
-        log.info('Loading preset %s from package: %s', name, pkg_path)
-        return PcleanConfig.from_yaml(pkg_path)
+    import yaml
+
+    # 1. Packaged preset — read text directly; works in editable + zip installs
+    text = _read_package_text(f'configs/presets/{name}.yaml')
+    if text is not None:
+        log.info('Loading preset %r from package resource', name)
+        return PcleanConfig.model_validate(yaml.safe_load(text) or {})
 
     # 2. CWD fallback paths
     candidates = [
@@ -941,7 +941,7 @@ def load_preset(name: str) -> PcleanConfig:
 
 
 def get_adios2_config_path() -> Path | None:
-    """Return the path to the bundled ADIOS2 BP5 XML configuration file.
+    """Return the filesystem path of the bundled ADIOS2 XML config.
 
     The file enables lossless blosc2/zstd compression and sets sensible
     buffer sizes for CASA Measurement Sets stored in ADIOS2 format.
@@ -957,4 +957,12 @@ def get_adios2_config_path() -> Path | None:
     Returns:
         Resolved filesystem :class:`Path`, or ``None`` if not found.
     """
-    return _resolve_package_config('configs/adios2_config.xml')
+    try:
+        from importlib.resources import files
+
+        candidate = Path(str(files('pclean').joinpath('configs/adios2_config.xml')))
+        if candidate.exists():
+            return candidate
+    except Exception:  # pragma: no cover
+        pass
+    return None
