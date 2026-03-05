@@ -10,7 +10,7 @@ import os
 import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -99,7 +99,6 @@ class TestConcatImagesTableLock:
 
         lock_was_held: list[bool] = []
 
-        original_imageconcat = ia.imageconcat
 
         import pclean.utils.image_concat as mod
 
@@ -294,7 +293,7 @@ class TestConcatSubcubesMode:
 
             concat_subcubes(base, nparts=1, extensions=['.image'],
                             _pool_cls=ThreadPoolExecutor)
-        assert ia.imageconcat.call_args.kwargs['mode'] == 'paged'# ---------------------------------------------------------------------------
+        assert ia.imageconcat.call_args.kwargs['mode'] == 'paged'
 # concat_subcubes — deprecated virtual= kwarg
 # ---------------------------------------------------------------------------
 
@@ -426,7 +425,7 @@ class TestConcatSubcubesParallel:
         os.makedirs(f'{base}.subcube.0.image')  # only 1 extension
 
         submitted: list[int] = []
-        original = __import__('concurrent.futures', fromlist=['ProcessPoolExecutor']).ProcessPoolExecutor
+
 
         class _CountingPool:
             def __init__(self, max_workers=None, **kw):

@@ -121,7 +121,11 @@ def _patch_dask_tcp() -> None:
         _dask_tcp_patched = True
         log.debug("Patched distributed.comm.tcp.read_bytes_rw + host_array with frame-size guard")
     except Exception as e:  # noqa: BLE001
-        log.warning("Could not patch distributed.comm.tcp.read_bytes_rw: %s", e)
+        log.warning(
+            "Could not patch distributed.comm.tcp.read_bytes_rw and "
+            "distributed.protocol.utils.host_array: %s",
+            e,
+        )
 
 
 def _dd():

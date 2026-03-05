@@ -169,8 +169,10 @@ pclean uses **~63% less peak memory** (58.6 GB vs 154.2 GB) because each
 worker loads only one channel at a time, while tclean holds all 1000 planes
 collectively.
 
-> **Note**: The pclean run used `niter=0` (makePSF only).  A direct
-> apples-to-apples comparison requires a pclean run with the same niter.
+> **Note**: The pclean run was configured with `niter=50000`, but converged
+> after 0 minor-cycle iterations (effectively makePSF-only / `niter=0` in
+> practice). A strict apples-to-apples comparison would require a pclean run
+> that reaches the same minor-cycle depth as the tclean configuration.
 
 ## 8. Conclusions
 
