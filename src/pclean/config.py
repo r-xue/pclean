@@ -860,7 +860,7 @@ def _deep_update(base: dict, overlay: dict) -> dict:
     return base
 
 
-def _resolve_package_yaml(rel_path: str) -> Path | None:
+def _resolve_package_config(rel_path: str) -> Path | None:
     """Resolve a YAML file bundled inside the ``pclean`` package.
 
     Uses :mod:`importlib.resources` so the lookup works both in editable
@@ -897,7 +897,7 @@ def load_defaults() -> PcleanConfig:
     Returns:
         A ``PcleanConfig`` with the reference default values.
     """
-    pkg_path = _resolve_package_yaml('configs/defaults.yaml')
+    pkg_path = _resolve_package_config('configs/defaults.yaml')
     if pkg_path is not None:
         log.info('Loading bundled defaults from %s', pkg_path)
         return PcleanConfig.from_yaml(pkg_path)
@@ -921,7 +921,7 @@ def load_preset(name: str) -> PcleanConfig:
         name: Preset name (without ``.yaml`` extension).
     """
     # 1. Packaged preset (works after pip install)
-    pkg_path = _resolve_package_yaml(f'configs/presets/{name}.yaml')
+    pkg_path = _resolve_package_config(f'configs/presets/{name}.yaml')
     if pkg_path is not None:
         log.info('Loading preset %s from package: %s', name, pkg_path)
         return PcleanConfig.from_yaml(pkg_path)
@@ -957,4 +957,4 @@ def get_adios2_config_path() -> Path | None:
     Returns:
         Resolved filesystem :class:`Path`, or ``None`` if not found.
     """
-    return _resolve_package_yaml('configs/adios2_config.xml')
+    return _resolve_package_config('configs/adios2_config.xml')
