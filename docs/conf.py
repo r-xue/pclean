@@ -15,6 +15,7 @@ version = '.'.join(release.split('.')[:2])
 
 extensions = [
     'myst_parser',
+    'sphinxcontrib.mermaid',
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
@@ -29,6 +30,7 @@ myst_enable_extensions = [
     'fieldlist',
     'tasklist',
 ]
+myst_fence_as_directive = ['mermaid']
 myst_heading_anchors = 3
 
 source_suffix = {
