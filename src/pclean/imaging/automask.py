@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,7 +42,7 @@ from scipy.ndimage import (
 log = logging.getLogger(__name__)
 
 # Type alias for a 2-D float32 image plane.
-Plane = NDArray[np.float32]
+Plane: TypeAlias = NDArray[np.float32]
 
 
 # ======================================================================
@@ -98,8 +99,8 @@ class AutoMaskState:
     channel so the Python caller can stash them between cycles.
     """
 
-    posmask: Plane | None = None  # accumulated positive mask
-    prevmask: Plane | None = None  # mask from previous iteration
+    posmask: NDArray[np.bool_] | None = None  # accumulated positive mask
+    prevmask: NDArray[np.bool_] | None = None  # mask from previous iteration
     iteration: int = 0  # how many times automask has been called
     skip: bool = False  # channel flagged as stable
 
@@ -119,7 +120,7 @@ def _plane_stats(
     residual: Plane,
     *,
     fastnoise: bool = True,
-    prev_mask: Plane | None = None,
+    prev_mask: NDArray[np.bool_] | None = None,
 ) -> tuple[float, float, float, float]:
     """Compute (absmax, median, robust_rms, classic_rms) for one plane.
 
