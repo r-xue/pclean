@@ -105,6 +105,7 @@ if __name__ == '__main__':
         # ---- Parallelization ----
         parallel=True,
         nworkers=8,
+        cube_chunksize=1,
         concat_mode='paged',
         keep_subcubes=False,
     )

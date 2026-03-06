@@ -630,11 +630,23 @@ class SerialImager:
         try:
             psf_name = f'{imagename}.psf'
             ia.open(psf_name)
-            beam = ia.restoringbeam()
+            beam_info = ia.restoringbeam()
             cs = ia.coordsys()
             incr = cs.increment(type='direction', format='n')['numeric']
             cell_rad = abs(incr[0])  # radians per pixel
             cs.done()
+
+            # restoringbeam() returns either a single beam dict
+            #   {'major': {...}, 'minor': {...}, 'positionangle': {...}}
+            # or a per-channel dict for multi-channel images
+            #   {'beams': {'*0': {'*0': {...}}, ...}, 'nChannels': N, ...}
+            # Extract the median-channel beam (matches SIImageStore behaviour).
+            if 'beams' in beam_info:
+                nchan = beam_info.get('nChannels', 1)
+                mid = nchan // 2
+                beam = beam_info['beams'][f'*{mid}']['*0']
+            else:
+                beam = beam_info
 
             # Beam FWHM in pixels
             major_pix = beam['major']['value']
