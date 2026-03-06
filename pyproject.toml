@@ -22,6 +22,7 @@ classifiers = [
 ]
 license-files = ["LICENSE"]
 requires-python = ">= 3.10"
+# casatools excluded: may already be provided by a monolithic CASA installation
 dependencies = ["dask", "distributed", "numpy", "pydantic>=2.0", "pyyaml>=6.0"]
 keywords = [
     "astronomy",
@@ -45,10 +46,16 @@ Changelog = "https://github.com/r-xue/pclean/releases"
 pclean = "pclean.__main__:main"
 
 [project.optional-dependencies]
-casa = ["casatools>=6.5"]
+casa = ["casatools>=6.5", "casatasks>=6.5"]
 dev = ["pytest", "pytest-cov"]
 slurm = ["dask-jobqueue>=0.8"]
-docs = ["sphinx>=7.0", "furo", "myst-parser>=2.0", "sphinx-copybutton"]
+docs = [
+    "sphinx>=7.0",
+    "furo",
+    "myst-parser>=2.0",
+    "sphinx-copybutton",
+    "sphinxcontrib-mermaid",
+]
 
 [tool.setuptools_scm]
 root = "."
@@ -181,6 +188,7 @@ sphinx = ">=7.0"
 furo = "*"
 myst-parser = ">=2.0"
 sphinx-copybutton = "*"
+sphinxcontrib-mermaid = "*"
 
 [tool.pixi.feature.dev.tasks]
 test = "pytest tests/ -v"
