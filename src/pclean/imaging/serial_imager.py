@@ -100,6 +100,7 @@ class SerialImager:
         self._beam_area_pix: float = 0.0
         self._sidelobe_level: float = 0.0
         self._beam_sigma_pix: tuple[float, float] = (0.0, 0.0)
+        self._beam_pa_rad: float = 0.0
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -619,8 +620,9 @@ class SerialImager:
     def _extract_beam_info(self) -> None:
         """Read beam parameters from the PSF image on disk.
 
-        Populates ``_beam_area_pix``, ``_sidelobe_level``, and
-        ``_beam_sigma_pix`` needed by ``automask_plane()``.
+        Populates ``_beam_area_pix``, ``_sidelobe_level``,
+        ``_beam_sigma_pix``, and ``_beam_pa_rad`` needed by
+        ``automask_plane()``.
         """
         imagename = self._impars['0']['imagename']
         ct = _ct()
@@ -645,10 +647,17 @@ class SerialImager:
                 major_pix /= cell_rad
                 minor_pix /= cell_rad
 
+            # Position angle
+            pa_deg = beam.get('positionangle', {}).get('value', 0.0)
+            pa_unit = beam.get('positionangle', {}).get('unit', 'deg')
+            self._beam_pa_rad = float(
+                np.deg2rad(pa_deg) if pa_unit == 'deg' else pa_deg
+            )
+
             fwhm_to_sigma = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
-            sigma_y = major_pix * fwhm_to_sigma
-            sigma_x = minor_pix * fwhm_to_sigma
-            self._beam_sigma_pix = (sigma_y, sigma_x)
+            sigma_major = major_pix * fwhm_to_sigma
+            sigma_minor = minor_pix * fwhm_to_sigma
+            self._beam_sigma_pix = (sigma_major, sigma_minor)
             self._beam_area_pix = float(
                 np.pi * major_pix * minor_pix / (4.0 * np.log(2.0))
             )
@@ -657,48 +666,39 @@ class SerialImager:
 
             # Sidelobe level from the PSF — matches SIImageStore::getPSFSidelobeLevel().
             #
-            # The C++ implementation:
-            #   1. Builds a Gaussian PSF model using the fitted beam
-            #   2. Computes delobed = PSF - Gaussian_model
-            #   3. sidelobe_level = max(|min(PSF)|, max(delobed))
-            #
-            # This correctly captures sidelobes that are very close to the
-            # main lobe (within ~2× FWHM), which a simple central-box
-            # exclusion scheme misses.  Under-estimating the sidelobe level
-            # switches the threshold from sidelobe-limited to noise-limited,
-            # producing a much lower mask_threshold and an over-grown mask.
+            # Build an analytic rotated-Gaussian PSF model (with PA), then
+            #   delobed = PSF − Gaussian_model
+            #   sidelobe = max(|min(PSF)|, max(delobed))
+            from pclean.imaging.automask import _make_gaussian_psf
+
             ia.open(psf_name)
             psf_data = ia.getchunk()
             ia.close()
             psf_plane = psf_data[:, :, 0, 0].astype(np.float32)
-            peak = psf_plane.max()
+            del psf_data
+            peak = float(psf_plane.max())
             if peak > 0:
-                psf_norm = psf_plane / peak
-            else:
-                psf_norm = psf_plane
+                psf_plane /= np.float32(peak)
 
-            from scipy.ndimage import gaussian_filter as _gf
-            cy, cx = psf_norm.shape[0] // 2, psf_norm.shape[1] // 2
-            # Create a Gaussian PSF model: delta → Gaussian with beam sigma
-            delta = np.zeros_like(psf_norm)
-            delta[cy, cx] = 1.0
-            gaussian_model = _gf(delta, sigma=(sigma_y, sigma_x))
-            g_peak = float(gaussian_model.max())
-            if g_peak > 0:
-                gaussian_model /= g_peak
-            # delobed = PSF - GaussianModel  (as in MakeGaussianPSF subtraction)
-            delobed = psf_norm - gaussian_model
-            # sidelobe = max(|min(PSF)|, max(PSF − Gaussian_model))
+            # Record |min(PSF)| before subtracting the model in-place.
+            psf_min_abs = abs(float(np.min(psf_plane)))
+
+            gaussian_model = _make_gaussian_psf(
+                psf_plane.shape, sigma_major, sigma_minor, self._beam_pa_rad,
+            )
+            psf_plane -= gaussian_model  # delobed in-place
+            del gaussian_model
             self._sidelobe_level = float(max(
-                abs(float(np.min(psf_norm))),
-                float(np.max(delobed)),
+                psf_min_abs, float(np.max(psf_plane)),
             ))
+            del psf_plane
 
             log.info(
                 '%s beam info: area=%.1f pix, sidelobe=%.4f, '
-                'sigma=(%.2f, %.2f) pix',
+                'sigma=(%.2f, %.2f) pix, PA=%.1f deg',
                 self._tag, self._beam_area_pix, self._sidelobe_level,
                 self._beam_sigma_pix[0], self._beam_sigma_pix[1],
+                np.rad2deg(self._beam_pa_rad),
             )
         finally:
             ia.done()
@@ -797,6 +797,7 @@ class SerialImager:
                 state=state,
                 pb=pb,
                 pblimit=pblimit,
+                beam_pa_rad=self._beam_pa_rad,
             )
 
             # Write mask to .mask image

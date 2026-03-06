@@ -13,7 +13,9 @@ import pytest
 from pclean.imaging.automask import (
     AutoMaskConfig,
     AutoMaskState,
+    _beam_sigma_to_axis,
     _grow_mask,
+    _make_gaussian_psf,
     _plane_stats,
     _prune_regions,
     _robust_rms,
@@ -129,6 +131,7 @@ class TestPruneRegions:
         mask = np.zeros((64, 64), dtype=np.float32)
         mask[10:20, 10:20] = 1.0  # 100 pixels
         pruned = _prune_regions(mask, min_size=50)
+        assert pruned.dtype == np.bool_
         assert pruned.sum() == 100
 
     def test_removes_small_region(self):
@@ -147,7 +150,14 @@ class TestPruneRegions:
     def test_zero_min_size_noop(self):
         mask = np.ones((10, 10), dtype=np.float32)
         result = _prune_regions(mask, min_size=0)
-        np.testing.assert_array_equal(result, mask)
+        assert result.sum() == mask.sum()
+
+    def test_accepts_bool_input(self):
+        mask = np.zeros((64, 64), dtype=np.bool_)
+        mask[10:20, 10:20] = True
+        pruned = _prune_regions(mask, min_size=50)
+        assert pruned.dtype == np.bool_
+        assert pruned.sum() == 100
 
 
 # ======================================================================
@@ -162,6 +172,7 @@ class TestSmoothAndCut:
         mask[32, 32] = 1.0
         smoothed = _smooth_and_cut(mask, beam_sigma_pix=(2.0, 2.0),
                                    smooth_factor=1.0, cut_threshold=0.01)
+        assert smoothed.dtype == np.bool_
         # The smoothed mask should be larger than the original point
         assert smoothed.sum() > 1
 
@@ -179,6 +190,29 @@ class TestSmoothAndCut:
         # Very high cut threshold → only peak of smoothed survives
         assert result.sum() < mask.sum()
 
+    def test_accepts_bool_input(self):
+        mask = np.zeros((64, 64), dtype=np.bool_)
+        mask[30:34, 30:34] = True
+        result = _smooth_and_cut(mask, beam_sigma_pix=(2.0, 2.0),
+                                 smooth_factor=1.0, cut_threshold=0.01)
+        assert result.dtype == np.bool_
+        assert result.sum() > 0
+
+    def test_beam_pa_rotates_smoothing(self):
+        """A PA=90° rotation should swap the axis extents."""
+        mask = np.zeros((64, 64), dtype=np.float32)
+        mask[32, 32] = 1.0
+        # Elongated beam: sigma_major=5, sigma_minor=1
+        r0 = _smooth_and_cut(mask, (5.0, 1.0), 1.0, 0.01, beam_pa_rad=0.0)
+        r90 = _smooth_and_cut(mask, (5.0, 1.0), 1.0, 0.01,
+                              beam_pa_rad=np.pi / 2)
+        # PA=0: major along axis-1 (cols), minor along axis-0 (rows)
+        # PA=90: major along axis-0 (rows), minor along axis-1 (cols)
+        # extent along axis-0 should be smaller at PA=0 vs PA=90
+        rows0 = np.where(r0.any(axis=1))[0]
+        rows90 = np.where(r90.any(axis=1))[0]
+        assert len(rows90) > len(rows0)
+
 
 # ======================================================================
 # _grow_mask
@@ -192,10 +226,11 @@ class TestGrowMask:
         prev[16, 16] = 1.0
         constraint = np.ones((32, 32), dtype=np.float32)
         grown = _grow_mask(prev, constraint, iterations=3)
+        assert grown.dtype == np.bool_
         assert grown.sum() > 1
         # Should be roughly diamond-shaped
-        assert grown[16, 16] == 1.0
-        assert grown[13, 16] == 1.0  # 3 pixels up
+        assert grown[16, 16]
+        assert grown[13, 16]  # 3 pixels up
 
     def test_respects_constraint(self):
         prev = np.zeros((32, 32), dtype=np.float32)
@@ -210,13 +245,21 @@ class TestGrowMask:
         prev[8, 8] = 1.0
         constraint = np.ones((16, 16), dtype=np.float32)
         result = _grow_mask(prev, constraint, iterations=0)
-        assert result.sum() == 1.0
+        assert result.sum() == 1
 
     def test_empty_mask_noop(self):
         prev = np.zeros((16, 16), dtype=np.float32)
         constraint = np.ones((16, 16), dtype=np.float32)
         result = _grow_mask(prev, constraint, iterations=10)
-        assert result.sum() == 0.0
+        assert result.sum() == 0
+
+    def test_accepts_bool_input(self):
+        prev = np.zeros((32, 32), dtype=np.bool_)
+        prev[16, 16] = True
+        constraint = np.ones((32, 32), dtype=np.bool_)
+        grown = _grow_mask(prev, constraint, iterations=3)
+        assert grown.dtype == np.bool_
+        assert grown.sum() > 1
 
 
 # ======================================================================
@@ -370,6 +413,85 @@ class TestAutomaskPlane:
         # With noise only, mask should be very small or zero
         pct = 100.0 * mask.sum() / residual.size
         assert pct < 1.0, f'Noise-only mask too large: {pct:.1f}%'
+
+    def test_state_stores_bool(self, bright_source, default_cfg):
+        """State arrays should be bool for 4× memory savings."""
+        state = AutoMaskState()
+        automask_plane(
+            residual=bright_source,
+            sidelobe_level=0.1,
+            beam_area_pix=30.0,
+            beam_sigma_pix=(3.0, 3.0),
+            cfg=default_cfg,
+            state=state,
+        )
+        assert state.prevmask.dtype == np.bool_
+        assert state.posmask.dtype == np.bool_
+
+
+# ======================================================================
+# _beam_sigma_to_axis
+# ======================================================================
+
+class TestBeamSigmaToAxis:
+    """Tests for beam (major, minor, PA) → per-axis sigma mapping."""
+
+    def test_pa_zero(self):
+        """PA=0: major along Dec (axis 1), minor along RA (axis 0)."""
+        s0, s1 = _beam_sigma_to_axis(5.0, 2.0, pa_rad=0.0)
+        assert abs(s0 - 2.0) < 1e-10, f'axis0 should be minor: {s0}'
+        assert abs(s1 - 5.0) < 1e-10, f'axis1 should be major: {s1}'
+
+    def test_pa_90(self):
+        """PA=90°: major along RA (axis 0), minor along Dec (axis 1)."""
+        s0, s1 = _beam_sigma_to_axis(5.0, 2.0, pa_rad=np.pi / 2)
+        assert abs(s0 - 5.0) < 1e-10
+        assert abs(s1 - 2.0) < 1e-10
+
+    def test_circular_beam(self):
+        """Circular beam: both axes get the same sigma."""
+        s0, s1 = _beam_sigma_to_axis(3.0, 3.0, pa_rad=0.7)
+        assert abs(s0 - 3.0) < 1e-10
+        assert abs(s1 - 3.0) < 1e-10
+
+
+# ======================================================================
+# _make_gaussian_psf
+# ======================================================================
+
+class TestMakeGaussianPSF:
+    """Tests for the analytic 2-D rotated Gaussian PSF model."""
+
+    def test_peak_normalised(self):
+        g = _make_gaussian_psf((64, 64), 3.0, 2.0, pa_rad=0.0)
+        assert abs(g.max() - 1.0) < 1e-5
+        assert g.dtype == np.float32
+
+    def test_centred(self):
+        g = _make_gaussian_psf((64, 64), 3.0, 2.0)
+        peak_idx = np.unravel_index(g.argmax(), g.shape)
+        assert peak_idx == (32, 32)
+
+    def test_pa_zero_elongation(self):
+        """PA=0: major along Dec (axis 1), so extent along axis 1 > axis 0."""
+        g = _make_gaussian_psf((128, 128), 10.0, 2.0, pa_rad=0.0)
+        # Width at half-max along each axis through the centre
+        row_profile = g[64, :]  # axis 1 profile (Dec)
+        col_profile = g[:, 64]  # axis 0 profile (RA)
+        width_ax1 = (row_profile > 0.5).sum()
+        width_ax0 = (col_profile > 0.5).sum()
+        assert width_ax1 > width_ax0, (
+            f'PA=0 major should be along axis 1: ax0={width_ax0}, ax1={width_ax1}'
+        )
+
+    def test_pa_90_elongation(self):
+        """PA=90°: major along RA (axis 0), so extent along axis 0 > axis 1."""
+        g = _make_gaussian_psf((128, 128), 10.0, 2.0, pa_rad=np.pi / 2)
+        row_profile = g[64, :]
+        col_profile = g[:, 64]
+        width_ax1 = (row_profile > 0.5).sum()
+        width_ax0 = (col_profile > 0.5).sum()
+        assert width_ax0 > width_ax1
 
 
 # ======================================================================
