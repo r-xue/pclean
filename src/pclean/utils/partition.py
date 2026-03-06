@@ -284,12 +284,23 @@ def _resolve_frequency_grid(
         sn.dividepsfbyweight()
 
         ia = ct.image()
-        ia.open(imgname + '.psf')
-        cs = ia.coordsys()
-        shape = ia.shape()
-        n = int(shape[3])
-        freqs = [float(cs.toworld([0, 0, 0, i])['numeric'][3]) for i in range(n)]
-        ia.close()
+        cs = None
+        try:
+            ia.open(imgname + '.psf')
+            cs = ia.coordsys()
+            shape = ia.shape()
+            n = int(shape[3])
+            freqs = [float(cs.toworld([0, 0, 0, i])['numeric'][3]) for i in range(n)]
+        finally:
+            if cs is not None:
+                try:
+                    cs.done()
+                except Exception:
+                    pass
+            try:
+                ia.done()
+            except Exception:
+                pass
 
         if n != nchan:
             log.warning(
