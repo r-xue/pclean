@@ -48,7 +48,11 @@ html_title = 'pclean'
 html_logo = '_static/logo.png'
 html_static_path = ['_static']
 html_css_files = ['custom.css']
-html_js_files = ['zoom.js']
+html_js_files = [
+    'vendor/medium-zoom.min.js',
+    'vendor/panzoom.min.js',
+    'zoom.js',
+]
 html_theme_options = {
     'footer_icons': [],
 }

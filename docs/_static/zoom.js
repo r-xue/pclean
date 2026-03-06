@@ -1,8 +1,8 @@
 /* zoom.js — interactive zoom/pan for figures and mermaid diagrams
  *
- * Libraries loaded from CDN:
- *   medium-zoom  (MIT) — click-to-zoom lightbox for <img> figures
- *   @panzoom/panzoom (MIT) — scroll/drag/click zoom inside mermaid modal
+ * Vendored dependencies (loaded before this file via conf.py html_js_files):
+ *   vendor/medium-zoom.min.js  v1.1.0  (MIT) — click-to-zoom lightbox for <img>
+ *   vendor/panzoom.min.js      v4.5.1  (MIT) — scroll/drag/click zoom for SVGs
  *
  * Mermaid UX:
  *   click diagram — open full-screen modal
@@ -12,17 +12,10 @@
 document.addEventListener('DOMContentLoaded', function () {
 
   // ── medium-zoom for regular <img> elements ────────────────────────────
-  var mzScript = document.createElement('script');
-  mzScript.src = 'https://cdn.jsdelivr.net/npm/medium-zoom@1/dist/medium-zoom.min.js';
-  mzScript.onload = function () {
-    mediumZoom('article img', { background: 'rgba(0,0,0,0.85)', margin: 40 });
-  };
-  document.head.appendChild(mzScript);
+  mediumZoom('article img', { background: 'rgba(0,0,0,0.85)', margin: 40 });
 
   // ── mermaid modal with panzoom ────────────────────────────────────────────
-  var pzScript = document.createElement('script');
-  pzScript.src = 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4/dist/panzoom.min.js';
-  pzScript.onload = function () {
+  (function () {
     var ZOOM_STEP = 1.4;
     var DRAG_THRESHOLD = 5;
 
@@ -116,7 +109,6 @@ document.addEventListener('DOMContentLoaded', function () {
     initMermaid();
     setTimeout(initMermaid, 500);
     setTimeout(initMermaid, 1500);
-  };
-  document.head.appendChild(pzScript);
+  })();
 });
 
