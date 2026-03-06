@@ -649,16 +649,29 @@ class SerialImager:
                 beam = beam_info
 
             # Beam FWHM in pixels
-            major_pix = beam['major']['value']
-            minor_pix = beam['minor']['value']
-            if beam['major']['unit'] == 'arcsec':
-                arcsec_per_rad = 206264.80625
-                major_pix /= (cell_rad * arcsec_per_rad)
-                minor_pix /= (cell_rad * arcsec_per_rad)
-            elif beam['major']['unit'] == 'rad':
-                major_pix /= cell_rad
-                minor_pix /= cell_rad
+            major_val = beam['major']['value']
+            minor_val = beam['minor']['value']
+            major_unit = beam['major'].get('unit', 'rad')
+            minor_unit = beam['minor'].get('unit', major_unit)
 
+            def _fwhm_to_rad(value: float, unit: str) -> float:
+                """Convert a FWHM value from the given angular unit to radians."""
+                if unit == 'rad':
+                    return float(value)
+                if unit == 'deg':
+                    return float(np.deg2rad(value))
+                if unit == 'arcmin':
+                    return float(np.deg2rad(value / 60.0))
+                if unit == 'arcsec':
+                    return float(np.deg2rad(value / 3600.0))
+                log.error('Unknown restoring beam unit: %s', unit)
+                raise ValueError(f'Unknown restoring beam unit: {unit}')
+
+            major_rad = _fwhm_to_rad(major_val, major_unit)
+            minor_rad = _fwhm_to_rad(minor_val, minor_unit)
+
+            major_pix = major_rad / cell_rad
+            minor_pix = minor_rad / cell_rad
             # Position angle
             pa_deg = beam.get('positionangle', {}).get('value', 0.0)
             pa_unit = beam.get('positionangle', {}).get('unit', 'deg')
