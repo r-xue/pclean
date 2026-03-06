@@ -28,6 +28,8 @@ import shutil
 import time
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 if TYPE_CHECKING:
     from pclean.config import PcleanConfig
 
@@ -88,6 +90,18 @@ class SerialImager:
         self._adios2_detected = False
         self._cube_gridding_disabled = False
 
+        # Python auto-multithresh state
+        self._use_python_automask = (
+            config.deconvolution.python_automask
+            and config.deconvolution.usemask == 'auto-multithresh'
+        )
+        self._automask_cfg = None  # AutoMaskConfig, created in setup()
+        self._automask_state: dict = {}  # {field_id: AutoMaskState}
+        self._beam_area_pix: float = 0.0
+        self._sidelobe_level: float = 0.0
+        self._beam_sigma_pix: tuple[float, float] = (0.0, 0.0)
+        self._beam_pa_rad: float = 0.0
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -102,6 +116,8 @@ class SerialImager:
             self._init_deconvolvers()
         if self._init_iter:
             self._init_iteration_control()
+        if self._use_python_automask:
+            self._init_python_automask()
 
     def teardown(self) -> None:
         """Release all C++ tool resources."""
@@ -127,6 +143,8 @@ class SerialImager:
         log.info('%s Computing PSF …', self._tag)
         self.si_tool.makepsf()
         self._normalize_psf()
+        if self._use_python_automask:
+            self._extract_beam_info()
 
     def make_pb(self) -> None:
         """Compute the primary beam."""
@@ -259,9 +277,17 @@ class SerialImager:
         return flag
 
     def update_mask(self) -> None:
-        """Update auto-multithresh mask (if configured)."""
-        for fld in self.sd_tools:
-            self.sd_tools[fld].setupmask()
+        """Update auto-multithresh mask (if configured).
+
+        When ``python_automask`` is enabled, runs the pure-numpy
+        automasking algorithm and writes the result to ``.mask``.
+        Otherwise delegates to the C++ ``setupmask()``.
+        """
+        if self._use_python_automask:
+            self._update_mask_python()
+        else:
+            for fld in self.sd_tools:
+                self.sd_tools[fld].setupmask()
 
     def restore(self) -> None:
         """Restore the final CLEAN images."""
@@ -305,6 +331,10 @@ class SerialImager:
                 t0 = time.monotonic()
                 self.run_major_cycle(is_first=True)
                 log.info('%s major_cycle(0): %.1fs', self._tag, time.monotonic() - t0)
+
+            # Pre-create .mask so the first Python automask can write to it
+            if self._use_python_automask:
+                self._create_mask_image()
 
             if self.config.niter > 0:
                 nmajor = self.config.iteration.nmajor
@@ -573,6 +603,252 @@ class SerialImager:
             self.sn_tools[fld].gatherresidual()
             self.sn_tools[fld].divideresidualbyweight()
             self.sn_tools[fld].multiplymodelbyweight()
+
+    # -- Python automasking helpers ------------------------------------
+
+    def _init_python_automask(self) -> None:
+        """Create ``AutoMaskConfig`` and per-field ``AutoMaskState``."""
+        from pclean.imaging.automask import AutoMaskConfig, AutoMaskState
+
+        self._automask_cfg = AutoMaskConfig.from_pclean_config(
+            self.config.deconvolution,
+        )
+        for fld in sorted(self._decpars.keys()):
+            self._automask_state[fld] = AutoMaskState()
+        log.info('%s Python automasking enabled', self._tag)
+
+    def _extract_beam_info(self) -> None:
+        """Read beam parameters from the PSF image on disk.
+
+        Populates ``_beam_area_pix``, ``_sidelobe_level``,
+        ``_beam_sigma_pix``, and ``_beam_pa_rad`` needed by
+        ``automask_plane()``.
+        """
+        imagename = self._impars['0']['imagename']
+        ct = _ct()
+        ia = ct.image()
+        try:
+            psf_name = f'{imagename}.psf'
+            ia.open(psf_name)
+            beam_info = ia.restoringbeam()
+            cs = ia.coordsys()
+            incr = cs.increment(type='direction', format='n')['numeric']
+            cell_rad = abs(incr[0])  # radians per pixel
+            cs.done()
+
+            # restoringbeam() returns either a single beam dict
+            #   {'major': {...}, 'minor': {...}, 'positionangle': {...}}
+            # or a per-channel dict for multi-channel images
+            #   {'beams': {'*0': {'*0': {...}}, ...}, 'nChannels': N, ...}
+            # Extract the median-channel beam (matches SIImageStore behaviour).
+            if 'beams' in beam_info:
+                nchan = beam_info.get('nChannels', 1)
+                mid = nchan // 2
+                beam = beam_info['beams'][f'*{mid}']['*0']
+            else:
+                beam = beam_info
+
+            # Beam FWHM in pixels
+            major_val = beam['major']['value']
+            minor_val = beam['minor']['value']
+            major_unit = beam['major'].get('unit', 'rad')
+            minor_unit = beam['minor'].get('unit', major_unit)
+
+            def _fwhm_to_rad(value: float, unit: str) -> float:
+                """Convert a FWHM value from the given angular unit to radians."""
+                if unit == 'rad':
+                    return float(value)
+                if unit == 'deg':
+                    return float(np.deg2rad(value))
+                if unit == 'arcmin':
+                    return float(np.deg2rad(value / 60.0))
+                if unit == 'arcsec':
+                    return float(np.deg2rad(value / 3600.0))
+                log.error('Unknown restoring beam unit: %s', unit)
+                raise ValueError(f'Unknown restoring beam unit: {unit}')
+
+            major_rad = _fwhm_to_rad(major_val, major_unit)
+            minor_rad = _fwhm_to_rad(minor_val, minor_unit)
+
+            major_pix = major_rad / cell_rad
+            minor_pix = minor_rad / cell_rad
+            # Position angle
+            pa_deg = beam.get('positionangle', {}).get('value', 0.0)
+            pa_unit = beam.get('positionangle', {}).get('unit', 'deg')
+            self._beam_pa_rad = float(
+                np.deg2rad(pa_deg) if pa_unit == 'deg' else pa_deg
+            )
+
+            fwhm_to_sigma = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+            sigma_major = major_pix * fwhm_to_sigma
+            sigma_minor = minor_pix * fwhm_to_sigma
+            self._beam_sigma_pix = (sigma_major, sigma_minor)
+            self._beam_area_pix = float(
+                np.pi * major_pix * minor_pix / (4.0 * np.log(2.0))
+            )
+
+            ia.close()
+
+            # Sidelobe level from the PSF — matches SIImageStore::getPSFSidelobeLevel().
+            #
+            # Build an analytic rotated-Gaussian PSF model (with PA), then
+            #   delobed = PSF − Gaussian_model
+            #   sidelobe = max(|min(PSF)|, max(delobed))
+            from pclean.imaging.automask import _make_gaussian_psf
+
+            ia.open(psf_name)
+            psf_data = ia.getchunk()
+            ia.close()
+            psf_plane = psf_data[:, :, 0, 0].astype(np.float32)
+            del psf_data
+            peak = float(psf_plane.max())
+            if peak > 0:
+                psf_plane /= np.float32(peak)
+
+            # Record |min(PSF)| before subtracting the model in-place.
+            psf_min_abs = abs(float(np.min(psf_plane)))
+
+            gaussian_model = _make_gaussian_psf(
+                psf_plane.shape, sigma_major, sigma_minor, self._beam_pa_rad,
+            )
+            psf_plane -= gaussian_model  # delobed in-place
+            del gaussian_model
+            self._sidelobe_level = float(max(
+                psf_min_abs, float(np.max(psf_plane)),
+            ))
+            del psf_plane
+
+            log.info(
+                '%s beam info: area=%.1f pix, sidelobe=%.4f, '
+                'sigma=(%.2f, %.2f) pix, PA=%.1f deg',
+                self._tag, self._beam_area_pix, self._sidelobe_level,
+                self._beam_sigma_pix[0], self._beam_sigma_pix[1],
+                np.rad2deg(self._beam_pa_rad),
+            )
+        finally:
+            ia.done()
+
+    def _create_mask_image(self) -> None:
+        """Create blank ``.mask`` images for each field (all zeros).
+
+        Must be called after the first major cycle so that ``.residual``
+        exists to serve as a template.  Without this the first
+        ``_update_mask_python()`` cannot write the computed mask,
+        leaving the C++ deconvolver with no mask constraint —
+        it then cleans the entire image, preventing convergence.
+        """
+        ct = _ct()
+        for fld in self.sd_tools:
+            imagename = self._impars[fld]['imagename']
+            mask_path = f'{imagename}.mask'
+            if os.path.isdir(mask_path):
+                continue  # already exists
+            residual_path = f'{imagename}.residual'
+            if not os.path.isdir(residual_path):
+                continue  # nothing to copy from
+            ia = ct.image()
+            try:
+                ia.open(residual_path)
+                ia.subimage(outfile=mask_path, dropdeg=False, overwrite=True)
+                ia.close()
+                # Fill mask with zeros (no pixels selected for cleaning)
+                ia.open(mask_path)
+                ia.set(0.0)
+                ia.close()
+            except Exception:
+                log.warning(
+                    '%s Could not create mask image %s',
+                    self._tag, mask_path,
+                )
+            finally:
+                ia.done()
+        log.debug('%s Created blank .mask images', self._tag)
+
+    def _update_mask_python(self) -> None:
+        """Compute the auto-multithresh mask in Python and write to .mask.
+
+        For each field, reads the residual, computes the mask via
+        ``automask_plane()``, and writes it to the ``.mask`` image.
+        Then calls ``setupmask()`` so the C++ deconvolver picks up
+        the externally written mask.
+
+        Skips recomputation when ``state.skip`` is True (mask change
+        was below ``minpercentchange`` on the previous iteration).
+        """
+        from pclean.imaging.automask import automask_plane, read_plane, write_plane
+
+        cfg = self._automask_cfg
+        pblimit = self.config.normalization.pblimit
+
+        for fld in self.sd_tools:
+            imagename = self._impars[fld]['imagename']
+
+            state = self._automask_state.get(fld)
+            if state is None:
+                from pclean.imaging.automask import AutoMaskState
+                state = AutoMaskState()
+                self._automask_state[fld] = state
+
+            # Skip mask recomputation if flagged as stable
+            if state.skip:
+                log.info(
+                    '%s Python automask (field %s): skipped '
+                    '(mask stable, change < minpercentchange)',
+                    self._tag, fld,
+                )
+                continue
+
+            t0 = time.monotonic()
+
+            # Read residual plane
+            residual = read_plane(f'{imagename}.residual')
+
+            # Read PB if available
+            pb = None
+            pb_path = f'{imagename}.pb'
+            if os.path.isdir(pb_path):
+                try:
+                    pb = read_plane(pb_path)
+                except Exception:
+                    log.debug('Could not read PB image %s', pb_path)
+
+            # Compute the mask
+            mask = automask_plane(
+                residual=residual,
+                sidelobe_level=self._sidelobe_level,
+                beam_area_pix=self._beam_area_pix,
+                beam_sigma_pix=self._beam_sigma_pix,
+                cfg=cfg,
+                state=state,
+                pb=pb,
+                pblimit=pblimit,
+                beam_pa_rad=self._beam_pa_rad,
+            )
+
+            # Write mask to .mask image
+            mask_path = f'{imagename}.mask'
+            if os.path.isdir(mask_path):
+                write_plane(mask_path, mask)
+            else:
+                log.warning(
+                    '%s Mask image %s does not exist; '
+                    'skipping Python automask write',
+                    self._tag, mask_path,
+                )
+
+            dt = time.monotonic() - t0
+            log.info(
+                '%s Python automask (field %s): %.3fs, '
+                '%d / %d mask pixels (%.1f%%)',
+                self._tag, fld, dt,
+                int(mask.sum()),
+                residual.size,
+                100.0 * mask.sum() / residual.size if residual.size > 0 else 0.0,
+            )
+
+        # Let C++ deconvolver pick up the written mask (usemask='user')
+        for fld in self.sd_tools:
+            self.sd_tools[fld].setupmask()
 
     # -- summary -------------------------------------------------------
 

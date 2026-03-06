@@ -121,6 +121,7 @@ _DEFAULT_DEC = dict(
     minpercentchange=0.0,
     verbose=False,
     fastnoise=True,
+    python_automask=True,
     fullsummary=False,
 )
 

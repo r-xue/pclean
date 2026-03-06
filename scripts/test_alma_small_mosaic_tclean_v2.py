@@ -2,20 +2,14 @@
 
 Run from the working directory with psrecord:
 
-    cd /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/pclean_small_mosaic_v2
-    pixi run -e forge psrecord \
-        --log /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_pclean_2.rec \
-        --include-children --include-io --include-cache --use-timestamp \
-        --include-dir /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/pclean_small_mosaic_v2 \
-        "python /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/scripts/test_alma_small_mosaic_pclean_v2.py \
-         > /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_pclean_2.log 2>&1"
+    cd /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/tclean_small_mosaic_v2
+    psrecord --log /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_tclean_2.rec --include-children --include-io --include-cache --use-timestamp --include-dir /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/tclean_small_mosaic_v2 "${casampi_envs} xvfb-run -a ${CASA_BIN}/mpicasa ${MPICASA_OPTS} -n 9 ${CASA_BIN}/casa ${CASA_OPTS} -c /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/scripts/test_alma_small_mosaic_tclean_v2.py > /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_tclean_2.log 2>&1"
 """
 
-import glob
 import shutil
 import time
 
-from pclean import pclean
+from casatasks import tclean
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -28,12 +22,15 @@ IMAGENAME = 'oussid.s39_0.W43-MM1_sci.spw24.repBW.regcal.I.iter1'
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    # Remove any previous output images (base + subcube products)
-    for path in glob.glob(IMAGENAME + '*'):
-        shutil.rmtree(path, ignore_errors=True)
+    # Remove any previous output images
+    for suffix in (
+        '', '.residual', '.image', '.model', '.psf', '.pb',
+        '.sumwt', '.weight', '.mask',
+    ):
+        shutil.rmtree(IMAGENAME + suffix, ignore_errors=True)
 
     t0 = time.monotonic()
-    pclean(
+    tclean(
         # ---- Data selection ----
         vis=[MS],
         field='W43-MM1',
@@ -100,14 +97,12 @@ if __name__ == '__main__':
         minpercentchange=1.0,
         fastnoise=True,
         savemodel='none',
-        python_automask=False,
+        # python_automask=False,
 
         # ---- Parallelization ----
-        parallel=True,
-        nworkers=8,
-        cube_chunksize=1,
-        concat_mode='paged',
-        keep_subcubes=False,
+        # parallel=True,
+        # concat_mode='paged',
+        # keep_subcubes=False,
     )
     elapsed = time.monotonic() - t0
     print(f'pclean elapsed time: {elapsed:.2f}s')

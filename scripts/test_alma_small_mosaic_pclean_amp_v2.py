@@ -2,13 +2,13 @@
 
 Run from the working directory with psrecord:
 
-    cd /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/pclean_small_mosaic_v2
+    cd /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/pclean_small_mosaic_amp_v2
     pixi run -e forge psrecord \
-        --log /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_pclean_2.rec \
+        --log /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_pclean_amp_2.rec \
         --include-children --include-io --include-cache --use-timestamp \
-        --include-dir /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/pclean_small_mosaic_v2 \
-        "python /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/scripts/test_alma_small_mosaic_pclean_v2.py \
-         > /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_pclean_2.log 2>&1"
+        --include-dir /zfs/nvme/Workspace/nrao/casa_dist/pclean/pclean/working/pclean_small_mosaic_amp_v2 \
+        "python /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/scripts/test_alma_small_mosaic_pclean_amp_v2.py \
+         > /home/rxue/Workspace/nvme/nrao/casa_dist/pclean/pclean/logs/test_alma_small_mosaic_pclean_amp_2.log 2>&1"
 """
 
 import glob
@@ -100,7 +100,7 @@ if __name__ == '__main__':
         minpercentchange=1.0,
         fastnoise=True,
         savemodel='none',
-        python_automask=False,
+        python_automask=True,
 
         # ---- Parallelization ----
         parallel=True,

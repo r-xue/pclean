@@ -1,4 +1,101 @@
 /* -----------------------------------------------------------------------
+   Mermaid diagrams — in-page container (click opens modal)
+   ----------------------------------------------------------------------- */
+
+.mermaid {
+    overflow: hidden;
+    border: 1px solid var(--color-background-border);
+    border-radius: 4px;
+    padding: 8px;
+    margin: 1em 0;
+    position: relative;
+}
+
+.mermaid > svg {
+    cursor: zoom-in;
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* -----------------------------------------------------------------------
+   Mermaid full-screen modal
+   ----------------------------------------------------------------------- */
+
+#mermaid-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+
+#mermaid-modal-overlay.visible {
+    display: flex;
+}
+
+#mermaid-modal-box {
+    width: 90vw;
+    height: 85vh;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--color-background-primary, #fff);
+    border-radius: 6px;
+    padding: 12px;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+#mermaid-modal-box:active {
+    cursor: grabbing;
+}
+
+#mermaid-modal-close,
+#mermaid-modal-reset {
+    position: fixed;
+    top: 16px;
+    z-index: 10000;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 4px;
+    font-size: 1.1rem;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+#mermaid-modal-close:hover,
+#mermaid-modal-reset:hover {
+    background: rgba(255,255,255,0.35);
+}
+
+#mermaid-modal-close { right: 16px; }
+#mermaid-modal-reset { right: 58px; }
+
+#mermaid-modal-hint {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.55);
+    font-size: 0.75rem;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 10000;
+}
+
+/* Remove the old in-page toolbar (no longer used) */
+.mermaid-toolbar { display: none; }
+
+/* -----------------------------------------------------------------------
    Layout
    ----------------------------------------------------------------------- */
 

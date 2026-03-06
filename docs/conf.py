@@ -15,6 +15,7 @@ version = '.'.join(release.split('.')[:2])
 
 extensions = [
     'myst_parser',
+    'sphinxcontrib.mermaid',
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
@@ -29,6 +30,7 @@ myst_enable_extensions = [
     'fieldlist',
     'tasklist',
 ]
+myst_fence_as_directive = ['mermaid']
 myst_heading_anchors = 3
 
 source_suffix = {
@@ -46,6 +48,11 @@ html_title = 'pclean'
 html_logo = '_static/logo.png'
 html_static_path = ['_static']
 html_css_files = ['custom.css']
+html_js_files = [
+    'vendor/medium-zoom.min.js',
+    'vendor/panzoom.min.js',
+    'zoom.js',
+]
 html_theme_options = {
     'footer_icons': [],
 }
@@ -57,6 +64,12 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'dask': ('https://docs.dask.org/en/stable/', None),
 }
+
+# -- Autodoc -----------------------------------------------------------
+
+# -- Mermaid ----------------------------------------------------------
+
+mermaid_init_js = "mermaid.initialize({startOnLoad:true, theme:'base', flowchart:{wrappingWidth:120}});"
 
 # -- Autodoc -----------------------------------------------------------
 

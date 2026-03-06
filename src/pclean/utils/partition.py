@@ -217,6 +217,127 @@ def _partition_cube_via_su(
     return result
 
 
+def _resolve_frequency_grid(
+    config: PcleanConfig,
+    nchan: int,
+) -> list[float] | None:
+    """Compute the actual CASA output frequency grid for the full cube.
+
+    Creates a temporary ``synthesisimager``, calls ``selectdata`` +
+    ``defineimage`` with the full *nchan*, and reads back the
+    per-channel frequencies that ``MSTransformRegridder::calcChanFreqs``
+    produces.  This gives us the *exact* grid that a monolithic
+    ``tclean(nchan=N)`` would use, so that subcube start frequencies
+    are consistent with the regridded data channels.
+
+    Returns:
+        A list of *nchan* channel centre frequencies in Hz, or *None*
+        if the grid could not be resolved.
+    """
+    import shutil
+    import tempfile
+
+    ct = _ct()
+
+    # Build a unique temporary imagename so that concurrent calls
+    # (e.g. tests) do not collide.
+    tmpdir = tempfile.mkdtemp(prefix='pclean_freqgrid_')
+    imgname = f'{tmpdir}/_freqgrid'
+
+    si = None
+    sn = None
+    try:
+        si = ct.synthesisimager()
+        selpars = config.to_casa_selpars()
+        for ms_key in sorted(selpars):
+            selrec = dict(selpars[ms_key])
+            selrec.setdefault('usescratch', False)
+            selrec.setdefault('readonly', True)
+            si.selectdata(selpars=selrec)
+
+        # Disable cube gridding so makepsf runs in-process (no
+        # sub-imager / normalizer setup needed for the grid query).
+        si.setcubegridding(False)
+
+        impars = dict(config.to_casa_impars()['0'])
+        impars['imagename'] = imgname
+        # Use a tiny spatial grid — we only need the spectral axis.
+        impars['imsize'] = [32, 32]
+        impars['nchan'] = nchan
+        impars['restart'] = False
+
+        gridpars = dict(config.to_casa_gridpars()['0'])
+        gridpars['imagename'] = imgname
+
+        si.defineimage(impars=impars, gridpars=gridpars)
+
+        # We need makepsf to materialise the image on disk so we can
+        # read its coordinate system.  A normalizer is required for
+        # makepsf to succeed (it gathers/divides PSF weights).
+        sn = ct.synthesisnormalizer()
+        normpars = dict(config.to_casa_normpars()['0'])
+        normpars['imagename'] = imgname
+        sn.setupnormalizer(normpars=normpars)
+
+        si.makepsf()
+        sn.gatherpsfweight()
+        sn.dividepsfbyweight()
+
+        ia = ct.image()
+        cs = None
+        try:
+            ia.open(imgname + '.psf')
+            cs = ia.coordsys()
+            shape = ia.shape()
+            n = int(shape[3])
+            freqs = [float(cs.toworld([0, 0, 0, i])['numeric'][3]) for i in range(n)]
+        finally:
+            if cs is not None:
+                try:
+                    cs.done()
+                except Exception:
+                    pass
+            try:
+                ia.done()
+            except Exception:
+                pass
+
+        if n != nchan:
+            log.warning(
+                'Frequency grid resolution produced %d channels '
+                '(expected %d) — falling back to arithmetic grid',
+                n, nchan,
+            )
+            return None
+
+        log.info(
+            'Resolved frequency grid: %d channels, '
+            'freq[0]=%.6f GHz, delta=%.6f MHz',
+            n, freqs[0] / 1e9,
+            (freqs[1] - freqs[0]) / 1e6 if n > 1 else 0.0,
+        )
+        return freqs
+
+    except Exception as exc:
+        log.debug(
+            'Could not resolve frequency grid via defineImage: %s',
+            exc,
+        )
+        return None
+    finally:
+        if si is not None:
+            try:
+                si.done()
+            except Exception:
+                pass
+        if sn is not None:
+            try:
+                sn.done()
+            except Exception:
+                pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def _partition_cube_even(
     config: PcleanConfig,
     nparts: int,
@@ -224,10 +345,16 @@ def _partition_cube_even(
 ) -> list[PcleanConfig]:
     """Simple even partition of channels across *nparts* workers.
 
-    When ``start`` and ``width`` are both frequency strings we compute
-    per-subcube frequency starts so that each worker images a
-    non-overlapping slice of the output cube.  Otherwise we fall back
-    to channel-index based partitioning.
+    When ``start`` and ``width`` are both frequency strings we first
+    resolve the *actual* output frequency grid via a lightweight
+    ``defineImage(nchan=full)`` call.  This ensures subcube start
+    frequencies match the grid that ``MSTransformRegridder::calcChanFreqs``
+    produces for the full cube, avoiding the per-channel alignment
+    drift that occurs when each single-channel subcube independently
+    calls ``calcChanFreqs``.
+
+    Falls back to arithmetic ``start + i * width`` when the grid
+    cannot be resolved.
     """
     if nchan <= 0:
         log.warning('nchan unknown — falling back to single partition')
@@ -239,6 +366,12 @@ def _partition_cube_even(
 
     start_hz = _parse_freq_hz(orig_start)
     width_hz = _parse_freq_hz(orig_width)
+
+    # Try to resolve the actual frequency grid that CASA would produce
+    # for a monolithic nchan-channel image.
+    resolved_freqs: list[float] | None = None
+    if start_hz is not None and width_hz is not None and nchan > 1:
+        resolved_freqs = _resolve_frequency_grid(config, nchan)
 
     # Greedy distribution: first (nchan % nparts) subcubes get one
     # extra channel, matching CASA's C++ cubedataimagepartition.
@@ -252,7 +385,10 @@ def _partition_cube_even(
         if nc <= 0:
             break
 
-        if start_hz is not None and width_hz is not None:
+        if resolved_freqs is not None:
+            # Use the exact frequency from the resolved grid.
+            sub_start = _format_freq_ghz(resolved_freqs[chan_offset])
+        elif start_hz is not None and width_hz is not None:
             sub_start_hz = start_hz + chan_offset * width_hz
             sub_start = _format_freq_ghz(sub_start_hz)
         else:

@@ -149,6 +149,12 @@ class DeconvolutionConfig(BaseModel):
     verbose: bool = False
     fastnoise: bool = True
 
+    # When True and usemask='auto-multithresh', run the automasking
+    # algorithm in pure Python (numpy/scipy) instead of delegating to
+    # the C++ SDMaskHandler.  This avoids repeated full-cube I/O,
+    # per-plane TempImage allocations, and casacore table-cache bugs.
+    python_automask: bool = True
+
 
 class IterationConfig(BaseModel):
     """Iteration control parameters."""
@@ -358,6 +364,7 @@ class PcleanConfig(BaseModel):
             'noisethreshold', 'lownoisethreshold', 'negativethreshold',
             'smoothfactor', 'minbeamfrac', 'cutthreshold', 'growiterations',
             'dogrowprune', 'minpercentchange', 'verbose', 'fastnoise',
+            'python_automask',
         }
         # Note: nterms appears in both image and deconvolution
         _dec_keys.add('nterms')
@@ -641,6 +648,15 @@ class PcleanConfig(BaseModel):
     def to_casa_decpars(self) -> dict[str, dict]:
         """Build CASA ``setupdeconvolution``-compatible deconvolution dicts."""
         dec = self.deconvolution
+
+        # When Python automasking is active, tell C++ the mask mode is
+        # 'user' so setupmask() won't run its own auto-multithresh.
+        # The Python layer writes the mask to <imagename>.mask and C++
+        # picks it up as a user-supplied mask.
+        cpp_usemask = dec.usemask
+        if dec.python_automask and dec.usemask == 'auto-multithresh':
+            cpp_usemask = 'user'
+
         return {
             '0': {
                 'deconvolver': dec.deconvolver,
@@ -652,7 +668,7 @@ class PcleanConfig(BaseModel):
                 'restoration': dec.restoration,
                 'restoringbeam': list(dec.restoringbeam),
                 'pbcor': dec.pbcor,
-                'usemask': dec.usemask,
+                'usemask': cpp_usemask,
                 'mask': dec.mask,
                 'pbmask': dec.pbmask,
                 'sidelobethreshold': dec.sidelobethreshold,

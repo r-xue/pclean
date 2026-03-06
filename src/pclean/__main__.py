@@ -94,6 +94,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument('--usemask', default='user')
     p.add_argument('--mask', default='')
     p.add_argument('--pbmask', type=float, default=0.0)
+    p.add_argument(
+        '--python-automask',
+        dest='python_automask',
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help='Use Python automasking instead of C++ (default: true)',
+    )
     # Restoration
     p.add_argument('--restoration', action='store_true', default=True)
     p.add_argument('--no-restoration', dest='restoration', action='store_false')
