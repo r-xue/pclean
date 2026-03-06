@@ -48,6 +48,7 @@ html_title = 'pclean'
 html_logo = '_static/logo.png'
 html_static_path = ['_static']
 html_css_files = ['custom.css']
+html_js_files = ['zoom.js']
 html_theme_options = {
     'footer_icons': [],
 }
@@ -59,6 +60,12 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'dask': ('https://docs.dask.org/en/stable/', None),
 }
+
+# -- Autodoc -----------------------------------------------------------
+
+# -- Mermaid ----------------------------------------------------------
+
+mermaid_init_js = "mermaid.initialize({startOnLoad:true, theme:'base', flowchart:{wrappingWidth:120}});"
 
 # -- Autodoc -----------------------------------------------------------
 

@@ -3,12 +3,6 @@
 ## Cube Mode (`specmode='cube'`)
 
 ```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 120
-  theme: base
----
 flowchart LR
     subgraph Coord["Coordinator"]
         direction TB
@@ -70,12 +64,6 @@ flowchart LR
 ## Continuum Mode (`specmode='mfs'`)
 
 ```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 120
-  theme: base
----
 flowchart LR
     subgraph Init["Setup"]
         direction TB
