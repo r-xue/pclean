@@ -40,4 +40,5 @@ api/pclean
 :caption: Performance Reports
 
 reports/alma_pclean_vs_tclean_v1
+reports/tclean_pclean_perf_v2
 ```
