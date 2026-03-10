@@ -387,10 +387,9 @@ def _partition_cube_even(
             max_f = max(resolved_freqs)
             config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
         elif start_hz is not None and width_hz is not None:
-            min_f = start_hz
-            max_f = start_hz + (nchan - 1) * abs(width_hz)
-            if min_f > max_f:
-                min_f, max_f = max_f, min_f
+            end_f = start_hz + (nchan - 1) * width_hz
+            min_f = min(start_hz, end_f)
+            max_f = max(start_hz, end_f)
             config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
         else:
             # Integer start/width: resolve frequency grid to get fracbw.
@@ -440,7 +439,13 @@ def _partition_cube_even(
             sub_start = str(chan_offset)
             sub_width = None
 
-        log.info('  subcube %d: start=%s  nchan=%d  (chan_offset=%d)', i, sub_start, nc, chan_offset)
+        log.info(
+            '  subcube %d: start=%s  nchan=%d  (chan_offset=%d)',
+            i,
+            sub_start,
+            nc,
+            chan_offset,
+        )
         sub = config.make_subcube_config(sub_start, nc, str(i), width=sub_width)
         result.append(sub)
         chan_offset += nc
