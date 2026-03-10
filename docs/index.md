@@ -31,8 +31,12 @@ benchmark_zfs_pools
 :hidden:
 :caption: API Reference
 
-api/config
 api/pclean
+api/config
+api/params
+api/imaging
+api/parallel
+api/utils
 ```
 
 ```{toctree}
