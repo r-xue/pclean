@@ -373,10 +373,53 @@ def _partition_cube_even(
     if start_hz is not None and width_hz is not None and nchan > 1:
         resolved_freqs = _resolve_frequency_grid(config, nchan)
 
+    # For briggsbwtaper: pre-compute fracbw from the *full* cube so that
+    # single-channel subcubes inherit a valid fractional bandwidth.
+    # Without this, nchan=1 subcubes get fracbw=0 and CASA's
+    # BriggsCubeWeightor rejects the value.
+    if (
+        config.weight.weighting == 'briggsbwtaper'
+        and config.weight.fracbw is None
+        and nchan > 1
+    ):
+        if resolved_freqs is not None and len(resolved_freqs) >= 2:
+            min_f = min(resolved_freqs)
+            max_f = max(resolved_freqs)
+            config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
+        elif start_hz is not None and width_hz is not None:
+            min_f = start_hz
+            max_f = start_hz + (nchan - 1) * abs(width_hz)
+            if min_f > max_f:
+                min_f, max_f = max_f, min_f
+            config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
+        else:
+            # Integer start/width: resolve frequency grid to get fracbw.
+            freqs = _resolve_frequency_grid(config, nchan)
+            if freqs is not None and len(freqs) >= 2:
+                min_f = min(freqs)
+                max_f = max(freqs)
+                config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
+                resolved_freqs = freqs  # reuse for partition below
+        if config.weight.fracbw is not None:
+            log.info(
+                'Pre-computed fracbw=%.6g for briggsbwtaper from full cube',
+                config.weight.fracbw,
+            )
+
     # Greedy distribution: first (nchan % nparts) subcubes get one
     # extra channel, matching CASA's C++ cubedataimagepartition.
     chans_per_base = nchan // nparts
     remainder = nchan % nparts
+
+    # Compute the frequency-domain channel width so that subcubes whose
+    # ``start`` is a frequency string also carry a matching ``width``.
+    # Without this, CASA rejects the mixed unit types (e.g. start in
+    # GHz but width as a bare channel count).
+    freq_width: str | None = None
+    if resolved_freqs is not None and len(resolved_freqs) >= 2:
+        freq_width = _format_freq_ghz(resolved_freqs[1] - resolved_freqs[0])
+    elif start_hz is not None and width_hz is not None:
+        freq_width = _format_freq_ghz(width_hz)
 
     result: list[PcleanConfig] = []
     chan_offset = 0
@@ -388,14 +431,17 @@ def _partition_cube_even(
         if resolved_freqs is not None:
             # Use the exact frequency from the resolved grid.
             sub_start = _format_freq_ghz(resolved_freqs[chan_offset])
+            sub_width = freq_width
         elif start_hz is not None and width_hz is not None:
             sub_start_hz = start_hz + chan_offset * width_hz
             sub_start = _format_freq_ghz(sub_start_hz)
+            sub_width = freq_width
         else:
             sub_start = str(chan_offset)
+            sub_width = None
 
         log.info('  subcube %d: start=%s  nchan=%d  (chan_offset=%d)', i, sub_start, nc, chan_offset)
-        sub = config.make_subcube_config(sub_start, nc, str(i))
+        sub = config.make_subcube_config(sub_start, nc, str(i), width=sub_width)
         result.append(sub)
         chan_offset += nc
 
