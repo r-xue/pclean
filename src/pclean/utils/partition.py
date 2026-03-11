@@ -392,13 +392,14 @@ def _partition_cube_even(
             max_f = max(start_hz, end_f)
             config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
         else:
-            # Integer start/width: resolve frequency grid to get fracbw.
+            # Integer start/width: resolve frequency grid to get fracbw only.
+            # Do not assign to resolved_freqs — the user asked for channel-based
+            # partitioning, so subcube starts should remain channel indices.
             freqs = _resolve_frequency_grid(config, nchan)
             if freqs is not None and len(freqs) >= 2:
                 min_f = min(freqs)
                 max_f = max(freqs)
                 config.weight.fracbw = 2.0 * (max_f - min_f) / (max_f + min_f)
-                resolved_freqs = freqs  # reuse for partition below
         if config.weight.fracbw is not None:
             log.info(
                 'Pre-computed fracbw=%.6g for briggsbwtaper from full cube',
