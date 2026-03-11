@@ -303,7 +303,8 @@ def _cli_to_flat_kwargs(args: argparse.Namespace) -> dict:
     kwargs['slurm_python'] = kwargs.pop('slurm_python', None)
     kwargs['slurm_local_directory'] = kwargs.pop('slurm_local_directory', None)
     kwargs['slurm_log_directory'] = kwargs.pop('slurm_log_directory', 'logs')
-    return kwargs
+    # Strip None values so argparse defaults don't override YAML config
+    return {k: v for k, v in kwargs.items() if v is not None}
 
 
 if __name__ == '__main__':
