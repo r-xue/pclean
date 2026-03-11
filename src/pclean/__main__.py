@@ -8,7 +8,8 @@ Usage::
 
     # Or with a YAML config file:
     python -m pclean --config pclean_config.yaml --cluster.nworkers 48
-
+    # Submit a SLURM coordinator job:
+    python -m pclean submit config.yaml --workdir /scratch/run_01
 All tclean parameters are supported as ``--<name> <value>`` flags.
 When ``--config`` is given, the YAML file provides the base and any
 CLI flags override it.
@@ -134,6 +135,33 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument('--slurm-log-directory', default='logs', help='SLURM log directory')
     # Logging
     p.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'])
+
+    # ---- Subcommands ----
+    sub = p.add_subparsers(dest='subcommand')
+
+    # pclean submit
+    sp = sub.add_parser(
+        'submit',
+        help='Generate and submit a SLURM coordinator job',
+        description=(
+            'Submit a pclean YAML config as a SLURM coordinator job. '
+            'The coordinator activates the pixi environment, runs '
+            'python -m pclean --config <config>, and dask-jobqueue '
+            'spawns worker jobs automatically.'
+        ),
+    )
+    sp.add_argument('submit_config', metavar='CONFIG', help='Path to a pclean YAML config file')
+    sp.add_argument('--workdir', required=True, help='Working directory for imaging output')
+    sp.add_argument('--pixi-project-dir', default=None, help='Root of the pclean pixi project')
+    sp.add_argument('--pixi-env', default='forge', help='Pixi environment name (default: forge)')
+    sp.add_argument('--coordinator-mem', default='8G', help='Coordinator job memory (default: 8G)')
+    sp.add_argument('--coordinator-cpus', type=int, default=2, help='Coordinator job CPUs (default: 2)')
+    sp.add_argument('--coordinator-walltime', default='24:00:00', help='Coordinator wall time (default: 24:00:00)')
+    sp.add_argument('--coordinator-job-name', default='pclean-coordinator', help='Coordinator SLURM job name')
+    sp.add_argument('--log-dir', default=None, help='Log directory (default: <pixi-project-dir>/logs)')
+    sp.add_argument('--psrecord', action=argparse.BooleanOptionalAction, default=True, help='Wrap in psrecord (default: True)')
+    sp.add_argument('--dry-run', action='store_true', default=False, help='Print the sbatch script without submitting')
+
     return p
 
 
@@ -155,6 +183,50 @@ def main(argv=None):
         level=getattr(logging, args.log_level),
         handlers=[handler],
     )
+
+    # ------------------------------------------------------------------
+    # Subcommand: pclean submit
+    # ------------------------------------------------------------------
+    if args.subcommand == 'submit':
+        from pclean.config import PcleanConfig, SubmitConfig
+        from pclean.parallel.submit import submit_pclean_slurm
+
+        # Load submit section from the YAML config as base, then overlay
+        # any CLI flags that the user explicitly provided.
+        yaml_cfg = PcleanConfig.from_yaml(args.submit_config)
+        base = yaml_cfg.cluster.submit.model_dump()
+
+        # CLI overrides (only apply non-default values)
+        cli_overrides: dict = {}
+        if args.pixi_project_dir is not None:
+            cli_overrides['pixi_project_dir'] = args.pixi_project_dir
+        if args.pixi_env != 'forge':
+            cli_overrides['pixi_env'] = args.pixi_env
+        if args.coordinator_mem != '8G':
+            cli_overrides['coordinator_mem'] = args.coordinator_mem
+        if args.coordinator_cpus != 2:
+            cli_overrides['coordinator_cpus'] = args.coordinator_cpus
+        if args.coordinator_walltime != '24:00:00':
+            cli_overrides['coordinator_walltime'] = args.coordinator_walltime
+        if args.coordinator_job_name != 'pclean-coordinator':
+            cli_overrides['coordinator_job_name'] = args.coordinator_job_name
+        if args.log_dir is not None:
+            cli_overrides['log_dir'] = args.log_dir
+        if args.psrecord is not True:
+            cli_overrides['psrecord'] = args.psrecord
+
+        base.update(cli_overrides)
+        submit_cfg = SubmitConfig(**base)
+
+        job_id = submit_pclean_slurm(
+            config=args.submit_config,
+            workdir=args.workdir,
+            submit_cfg=submit_cfg,
+            dry_run=args.dry_run,
+        )
+        if job_id is not None:
+            print(f'Submitted coordinator job: {job_id}')
+        return
 
     config_path = args.config
     presets = args.preset
