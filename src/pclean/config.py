@@ -68,8 +68,8 @@ class ImageConfig(BaseModel):
     specmode: str = 'mfs'
     reffreq: str = ''
     nchan: int = -1
-    start: str = ''
-    width: str = ''
+    start: str | int = ''
+    width: str | int = ''
     outframe: str = 'LSRK'
     veltype: str = 'radio'
     restfreq: list[str] = Field(default_factory=list)
@@ -812,6 +812,7 @@ class PcleanConfig(BaseModel):
         start: int | str,
         nchan: int,
         image_suffix: str,
+        width: int | str | None = None,
     ) -> PcleanConfig:
         """Return a copy tuned for a channel sub-range (cube parallelism).
 
@@ -819,10 +820,16 @@ class PcleanConfig(BaseModel):
             start: Start channel (int) or frequency/velocity string.
             nchan: Number of channels in this subcube.
             image_suffix: Suffix appended to the base imagename.
+            width: Channel width override.  When *start* is converted
+                to a frequency string the caller must also supply a
+                matching frequency *width* so that CASA does not
+                reject mixed unit types.
         """
         data = self.model_dump(mode='python')
         data['image']['nchan'] = nchan
         data['image']['start'] = start if isinstance(start, str) else str(start)
+        if width is not None:
+            data['image']['width'] = width if isinstance(width, str) else str(width)
         data['image']['imagename'] = f'{self.imagename}.subcube.{image_suffix}'
         # Pre-compute fracbw from the *parent* (full-cube) config so that
         # subcubes with nchan=1 still get the correct fractional bandwidth
