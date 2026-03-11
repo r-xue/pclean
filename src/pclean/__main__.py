@@ -7,11 +7,11 @@ Usage::
         --parallel --nworkers 8
 
     # Or with a YAML config file:
-    python -m pclean --config pclean_config.yaml --cluster.nworkers 48
+    python -m pclean --pconfig pclean_config.yaml --cluster.nworkers 48
     # Submit a SLURM coordinator job:
     python -m pclean submit config.yaml --workdir /scratch/run_01
 All tclean parameters are supported as ``--<name> <value>`` flags.
-When ``--config`` is given, the YAML file provides the base and any
+When ``--pconfig`` is given, the YAML file provides the base and any
 CLI flags override it.
 """
 
@@ -29,7 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     # Config file
     p.add_argument(
-        '--config',
+        '--pconfig',
         default=None,
         help='Path to a YAML configuration file',
     )
@@ -146,7 +146,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             'Submit a pclean YAML config as a SLURM coordinator job. '
             'The coordinator activates the pixi environment, runs '
-            'python -m pclean --config <config>, and dask-jobqueue '
+            'python -m pclean --pconfig <config>, and dask-jobqueue '
             'spawns worker jobs automatically.'
         ),
     )
@@ -225,7 +225,7 @@ def main(argv=None):
             print(f'Submitted coordinator job: {job_id}')
         return
 
-    config_path = args.config
+    config_path = args.pconfig
     presets = args.preset
     dump_config = args.dump_config
 
@@ -259,7 +259,7 @@ def main(argv=None):
         return
 
     # ------------------------------------------------------------------
-    # Legacy flat-kwargs path (no --config)
+    # Legacy flat-kwargs path (no --pconfig)
     # ------------------------------------------------------------------
     if dump_config:
         from pclean.config import PcleanConfig
@@ -283,7 +283,7 @@ def _cli_to_flat_kwargs(args: argparse.Namespace) -> dict:
     kwargs = vars(args).copy()
     # Remove meta-args
     kwargs.pop('log_level', None)
-    kwargs.pop('config', None)
+    kwargs.pop('pconfig', None)
     kwargs.pop('preset', None)
     kwargs.pop('dump_config', None)
     # Normalise CLI names to Python names

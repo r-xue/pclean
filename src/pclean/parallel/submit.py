@@ -109,8 +109,8 @@ def generate_sbatch_script(
         else pixi_project_dir / 'logs'
     )
 
-    # Build the core command: python -m pclean --config <path>
-    pclean_cmd = f'python -m pclean --config {config}'
+    # Build the core command: python -m pclean --pconfig <path>
+    pclean_cmd = f'python -m pclean --pconfig {config}'
     log_base = log_dir / config.stem
 
     if submit_cfg.psrecord:
@@ -152,7 +152,7 @@ def submit_pclean_slurm(
 
     This creates the coordinator sbatch script and submits it via
     ``sbatch``.  The coordinator job activates the pixi environment,
-    runs ``python -m pclean --config <config>``, and dask-jobqueue
+    runs ``python -m pclean --pconfig <config>``, and dask-jobqueue
     submits the worker jobs automatically.
 
     Args:

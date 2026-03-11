@@ -29,7 +29,7 @@ class TestGenerateSbatchScript:
         assert '#SBATCH --cpus-per-task=2' in script
         assert '#SBATCH --time=24:00:00' in script
         assert 'pixi shell-hook -e forge' in script
-        assert 'python -m pclean --config' in script
+        assert 'python -m pclean --pconfig' in script
 
     def test_custom_submit_config(self, tmp_path):
         """Custom SubmitConfig values appear in the script."""
@@ -103,7 +103,7 @@ class TestGenerateSbatchScript:
         script = generate_sbatch_script(cfg_file, tmp_path / 'work', submit_cfg)
         # The psrecord command wrapper should not appear
         assert 'psrecord \\\n' not in script
-        assert 'python -m pclean --config' in script
+        assert 'python -m pclean --pconfig' in script
 
     def test_extra_sbatch_directives(self, tmp_path):
         """Extra sbatch directives appear in the script."""

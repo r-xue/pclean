@@ -30,8 +30,8 @@ class TestBuildParser:
 
     def test_config_arg(self):
         p = _build_parser()
-        args = p.parse_args(['--config', 'my.yaml'])
-        assert args.config == 'my.yaml'
+        args = p.parse_args(['--pconfig', 'my.yaml'])
+        assert args.pconfig == 'my.yaml'
 
     def test_preset_repeatable(self):
         p = _build_parser()
@@ -104,10 +104,10 @@ class TestCliToFlatKwargs:
 
     def test_removes_meta_args(self):
         p = _build_parser()
-        args = p.parse_args(['--config', 'file.yaml', '--log-level', 'DEBUG'])
+        args = p.parse_args(['--pconfig', 'file.yaml', '--log-level', 'DEBUG'])
         kw = _cli_to_flat_kwargs(args)
         assert 'log_level' not in kw
-        assert 'config' not in kw
+        assert 'pconfig' not in kw
         assert 'preset' not in kw
         assert 'dump_config' not in kw
 
@@ -219,14 +219,14 @@ class TestMainSubmit:
 
 
 # ---------------------------------------------------------------------------
-# main() — --config path
+# main() — --pconfig path
 # ---------------------------------------------------------------------------
 
 class TestMainConfigPath:
-    """Test main() with --config YAML file."""
+    """Test main() with --pconfig YAML file."""
 
     def test_config_file(self, tmp_path, capsys):
-        """--config loads YAML and calls pclean()."""
+        """--pconfig loads YAML and calls pclean()."""
         cfg_file = tmp_path / 'config.yaml'
         cfg_file.write_text(
             'selection:\n  vis: test.ms\n'
@@ -234,14 +234,14 @@ class TestMainConfigPath:
         )
         mock_result = {'imagename': 'out', 'nchan': 1}
         with patch('pclean.pclean.pclean', return_value=mock_result) as mock_pclean:
-            main(['--config', str(cfg_file)])
+            main(['--pconfig', str(cfg_file)])
             mock_pclean.assert_called_once()
         captured = capsys.readouterr()
         output = json.loads(captured.out)
         assert output['imagename'] == 'out'
 
     def test_config_vis_not_overridden_by_cli_default(self, tmp_path, capsys):
-        """--config vis must not be clobbered by argparse default (regression)."""
+        """--pconfig vis must not be clobbered by argparse default (regression)."""
         cfg_file = tmp_path / 'config.yaml'
         cfg_file.write_text(
             'selection:\n  vis: /data/my.ms\n'
@@ -249,20 +249,20 @@ class TestMainConfigPath:
         )
         mock_result = {'imagename': 'out'}
         with patch('pclean.pclean.pclean', return_value=mock_result) as mock_pclean:
-            main(['--config', str(cfg_file)])
+            main(['--pconfig', str(cfg_file)])
             mock_pclean.assert_called_once()
             cfg_arg = mock_pclean.call_args[1].get('config') or mock_pclean.call_args[0][0]
             assert cfg_arg.selection.vis == '/data/my.ms'
 
     def test_dump_config_from_yaml(self, tmp_path, capsys):
-        """--config + --dump-config writes merged YAML."""
+        """--pconfig + --dump-config writes merged YAML."""
         cfg_file = tmp_path / 'config.yaml'
         cfg_file.write_text(
             'selection:\n  vis: test.ms\n'
             'image:\n  imagename: myimg\n'
         )
         out_file = tmp_path / 'dumped.yaml'
-        main(['--config', str(cfg_file), '--dump-config', str(out_file)])
+        main(['--pconfig', str(cfg_file), '--dump-config', str(out_file)])
         assert out_file.exists()
         captured = capsys.readouterr()
         assert 'Config written to' in captured.out
@@ -273,7 +273,7 @@ class TestMainConfigPath:
 # ---------------------------------------------------------------------------
 
 class TestMainLegacy:
-    """Test main() with legacy flat kwargs (no --config)."""
+    """Test main() with legacy flat kwargs (no --pconfig)."""
 
     def test_flat_kwargs_calls_pclean(self, tmp_path, capsys):
         """Flat kwargs path calls pclean() with parsed arguments."""
@@ -286,7 +286,7 @@ class TestMainLegacy:
             assert call_kwargs.kwargs['niter'] == 100
 
     def test_dump_config_no_yaml(self, tmp_path, capsys):
-        """--dump-config without --config still works."""
+        """--dump-config without --pconfig still works."""
         out_file = tmp_path / 'dumped.yaml'
         main([
             '--vis', 'test.ms', '--imagename', 'out',

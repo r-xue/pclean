@@ -217,7 +217,7 @@ class SubmitConfig(BaseModel):
     """SLURM coordinator (submit) job parameters.
 
     These control the *coordinator* SLURM job that runs
-    ``python -m pclean --config <yaml>`` and lets dask-jobqueue
+    ``python -m pclean --pconfig <yaml>`` and lets dask-jobqueue
     spawn per-channel worker jobs.
     """
 
