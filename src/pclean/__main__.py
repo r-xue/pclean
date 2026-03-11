@@ -46,7 +46,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Dump the effective (merged) configuration to a YAML file and exit',
     )
     # Data selection
-    p.add_argument('--vis', nargs='+', default=[''])
+    p.add_argument('--vis', nargs='+', default=None)
     p.add_argument('--field', default='')
     p.add_argument('--spw', default='')
     p.add_argument('--timerange', default='')
@@ -175,14 +175,10 @@ def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    from pclean import CustomFormatter
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(CustomFormatter())
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        handlers=[handler],
-    )
+    # Reconfigure the package-level logger (set up in pclean.__init__)
+    # instead of adding a second handler via basicConfig on the root logger.
+    pclean_logger = logging.getLogger('pclean')
+    pclean_logger.setLevel(getattr(logging, args.log_level))
 
     # ------------------------------------------------------------------
     # Subcommand: pclean submit
@@ -277,7 +273,7 @@ def main(argv=None):
     from pclean.pclean import pclean
 
     kwargs = _cli_to_flat_kwargs(args)
-    vis = kwargs.pop('vis')
+    vis = kwargs.pop('vis', '')
     result = pclean(vis=vis, **kwargs)
     print(json.dumps(result, indent=2, default=str))
 

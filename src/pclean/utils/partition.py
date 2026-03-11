@@ -253,6 +253,12 @@ def _resolve_frequency_grid(
             selrec = dict(selpars[ms_key])
             selrec.setdefault('usescratch', False)
             selrec.setdefault('readonly', True)
+            log.debug(
+                '_resolve_frequency_grid selectdata[%s]: msname=%r  type=%s',
+                ms_key,
+                selrec.get('msname'),
+                type(selrec.get('msname')).__name__,
+            )
             si.selectdata(selpars=selrec)
 
         # Disable cube gridding so makepsf runs in-process (no

@@ -166,6 +166,8 @@ def run_subcube(config_dict: dict) -> dict:
 
     config = PcleanConfig.model_validate(config_dict)
 
+    log.debug('run_subcube: vis=%r  imagename=%r  cwd=%s', config.selection.vis, config.imagename, os.getcwd())
+
     # Resolve imagename to absolute *before* we chdir so that output
     # images always land in the user's original working directory.
     abs_imgname = os.path.abspath(config.imagename)

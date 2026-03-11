@@ -135,6 +135,13 @@ class TestCliToFlatKwargs:
         kw = _cli_to_flat_kwargs(args)
         assert kw['vis'] == ['a.ms', 'b.ms']
 
+    def test_vis_default_stripped(self):
+        """When --vis is not given, it must not appear in flat kwargs."""
+        p = _build_parser()
+        args = p.parse_args([])
+        kw = _cli_to_flat_kwargs(args)
+        assert 'vis' not in kw
+
 
 # ---------------------------------------------------------------------------
 # main() — submit subcommand
@@ -232,6 +239,20 @@ class TestMainConfigPath:
         captured = capsys.readouterr()
         output = json.loads(captured.out)
         assert output['imagename'] == 'out'
+
+    def test_config_vis_not_overridden_by_cli_default(self, tmp_path, capsys):
+        """--config vis must not be clobbered by argparse default (regression)."""
+        cfg_file = tmp_path / 'config.yaml'
+        cfg_file.write_text(
+            'selection:\n  vis: /data/my.ms\n'
+            'image:\n  imagename: out\n'
+        )
+        mock_result = {'imagename': 'out'}
+        with patch('pclean.pclean.pclean', return_value=mock_result) as mock_pclean:
+            main(['--config', str(cfg_file)])
+            mock_pclean.assert_called_once()
+            cfg_arg = mock_pclean.call_args[1].get('config') or mock_pclean.call_args[0][0]
+            assert cfg_arg.selection.vis == '/data/my.ms'
 
     def test_dump_config_from_yaml(self, tmp_path, capsys):
         """--config + --dump-config writes merged YAML."""

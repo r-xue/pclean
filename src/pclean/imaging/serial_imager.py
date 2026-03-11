@@ -458,6 +458,9 @@ class SerialImager:
         # Select data from each MS
         for ms_key in sorted(self._selpars.keys()):
             selrec = dict(self._selpars[ms_key])
+            log.debug(
+                '%s selectdata selpars[%s]: msname=%r  cwd=%s', self._tag, ms_key, selrec.get('msname'), os.getcwd()
+            )
             self.si_tool.selectdata(selpars=selrec)
 
         # Define images for each field
