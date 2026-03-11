@@ -399,3 +399,203 @@ class TestResolveConcatMode:
         mode, _ = self._resolve('supersonic', False)
         assert mode == 'paged'
 
+
+class TestFreqWidthPropagation:
+    """Frequency-based partitions must give subcubes a frequency width, not a channel count."""
+
+    def test_freq_subcubes_have_freq_width(self):
+        """When start/width are frequency strings, every subcube.image.width
+        should be a frequency quantity (e.g. ending in 'GHz'), not a bare
+        channel count like '1'."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=40,
+            start='214.4501854310GHz',
+            width='15.6245970MHz',
+        )
+        subs = _partition_cube_even(cfg, nparts=8, nchan=40)
+        for sub in subs:
+            assert sub.image.width is not None
+            assert 'GHz' in sub.image.width or 'MHz' in sub.image.width, (
+                f'subcube width should be a frequency quantity, got {sub.image.width!r}'
+            )
+
+    def test_freq_width_consistent_across_subcubes(self):
+        """All subcubes should carry the same frequency width."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=20,
+            start='268.5GHz',
+            width='0.2441382MHz',
+        )
+        subs = _partition_cube_even(cfg, nparts=5, nchan=20)
+        widths = {s.image.width for s in subs}
+        assert len(widths) == 1, f'all subcubes should share the same width, got {widths}'
+
+    def test_single_chan_subcube_has_freq_width(self):
+        """chunksize=1 → nchan=1 subcubes must still get a frequency width."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=4,
+            start='268.5GHz',
+            width='0.2441382MHz',
+        )
+        subs = _partition_cube_even(cfg, nparts=4, nchan=4)
+        assert len(subs) == 4
+        for sub in subs:
+            assert sub.image.nchan == 1
+            assert 'GHz' in sub.image.width or 'MHz' in sub.image.width
+
+    def test_channel_start_keeps_channel_width(self):
+        """When start is a channel index, width should remain channel-based."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=20,
+            start='0',
+            width='1',
+        )
+        subs = _partition_cube_even(cfg, nparts=4, nchan=20)
+        for sub in subs:
+            # Channel-based start → width should NOT be a frequency string
+            assert 'GHz' not in (sub.image.width or '')
+
+
+class TestBriggsBwtaperFracbw:
+    """briggsbwtaper partitions with nchan=1 subcubes must produce a positive fracbw."""
+
+    def test_fracbw_precomputed_on_parent(self):
+        """_partition_cube_even should set config.weight.fracbw before
+        creating subcubes so that nchan=1 children inherit it."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=10,
+            start='268.5GHz',
+            width='0.2441382MHz',
+            weighting='briggsbwtaper',
+            robust=0.5,
+        )
+        assert cfg.weight.fracbw is None  # not set yet
+        _partition_cube_even(cfg, nparts=10, nchan=10)
+        # After partitioning, parent config should have fracbw populated
+        assert cfg.weight.fracbw is not None
+        assert cfg.weight.fracbw > 0
+
+    def test_single_chan_subcube_has_positive_fracbw(self):
+        """nchan=1 subcubes with briggsbwtaper must have fracbw > 0 in
+        to_casa_weightpars(), not the zero that nchan=1 alone would produce."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=10,
+            start='268.5GHz',
+            width='0.2441382MHz',
+            weighting='briggsbwtaper',
+            robust=0.5,
+        )
+        subs = _partition_cube_even(cfg, nparts=10, nchan=10)
+        for sub in subs:
+            assert sub.image.nchan == 1
+            wp = sub.to_casa_weightpars()
+            assert 'fracbw' in wp, 'weightpars must contain fracbw'
+            assert wp['fracbw'] > 0, f'fracbw must be positive, got {wp["fracbw"]}'
+
+    def test_fracbw_value_is_reasonable(self):
+        """fracbw should be consistent with 2*(fmax-fmin)/(fmax+fmin)
+        computed from the full cube frequency span."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        nchan = 20
+        start_ghz = 268.5
+        width_mhz = 0.2441382
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=nchan,
+            start=f'{start_ghz}GHz',
+            width=f'{width_mhz}MHz',
+            weighting='briggsbwtaper',
+            robust=0.5,
+        )
+        subs = _partition_cube_even(cfg, nparts=nchan, nchan=nchan)
+        fracbw = subs[0].to_casa_weightpars()['fracbw']
+
+        # Expected: 2*(fmax - fmin)/(fmax + fmin) from the *full* cube
+        fmin = start_ghz * 1e9
+        fmax = fmin + (nchan - 1) * width_mhz * 1e6
+        expected = 2.0 * (fmax - fmin) / (fmax + fmin)
+        assert abs(fracbw - expected) / expected < 1e-4, (
+            f'fracbw={fracbw} differs from expected={expected}'
+        )
+
+    def test_all_subcubes_share_same_fracbw(self):
+        """Every subcube in a briggsbwtaper partition should get the same fracbw."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=12,
+            start='268.5GHz',
+            width='0.2441382MHz',
+            weighting='briggsbwtaper',
+            robust=0.5,
+        )
+        subs = _partition_cube_even(cfg, nparts=4, nchan=12)
+        fracbws = [s.to_casa_weightpars()['fracbw'] for s in subs]
+        assert all(f == fracbws[0] for f in fracbws), (
+            f'all subcubes must share the same fracbw, got {fracbws}'
+        )
+
+    def test_non_briggsbwtaper_no_fracbw(self):
+        """Non-briggsbwtaper weighting should not produce a fracbw key."""
+        from pclean.config import PcleanConfig
+        from pclean.utils.partition import _partition_cube_even
+
+        cfg = PcleanConfig.from_flat_kwargs(
+            vis='a.ms',
+            imagename='cube',
+            specmode='cube',
+            nchan=10,
+            start='268.5GHz',
+            width='0.2441382MHz',
+            weighting='briggs',
+            robust=0.5,
+        )
+        subs = _partition_cube_even(cfg, nparts=10, nchan=10)
+        for sub in subs:
+            wp = sub.to_casa_weightpars()
+            assert 'fracbw' not in wp
+
