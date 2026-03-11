@@ -138,6 +138,7 @@ cluster:
     log_directory: logs
     job_script_prologue: []
   submit:
+    workdir: null
     pixi_project_dir: null
     pixi_env: forge
     coordinator_mem: 8G

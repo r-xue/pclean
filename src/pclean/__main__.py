@@ -151,7 +151,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     sp.add_argument('submit_config', metavar='CONFIG', help='Path to a pclean YAML config file')
-    sp.add_argument('--workdir', required=True, help='Working directory for imaging output')
+    sp.add_argument('--workdir', default=None, help='Working directory for imaging output (overrides YAML submit.workdir)')
     sp.add_argument('--pixi-project-dir', default=None, help='Root of the pclean pixi project')
     sp.add_argument('--pixi-env', default='forge', help='Pixi environment name (default: forge)')
     sp.add_argument('--coordinator-mem', default='8G', help='Coordinator job memory (default: 8G)')
@@ -214,13 +214,14 @@ def main(argv=None):
             cli_overrides['log_dir'] = args.log_dir
         if args.psrecord is not True:
             cli_overrides['psrecord'] = args.psrecord
+        if args.workdir is not None:
+            cli_overrides['workdir'] = args.workdir
 
         base.update(cli_overrides)
         submit_cfg = SubmitConfig(**base)
 
         job_id = submit_pclean_slurm(
             config=args.submit_config,
-            workdir=args.workdir,
             submit_cfg=submit_cfg,
             dry_run=args.dry_run,
         )

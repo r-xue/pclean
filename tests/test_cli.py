@@ -150,10 +150,10 @@ class TestMainSubmit:
         cfg_file.write_text(
             'selection:\n  vis: test.ms\n'
             'cluster:\n  submit:\n    coordinator_mem: 4G\n'
+            '    workdir: ' + str(tmp_path / 'work') + '\n'
         )
         main([
             'submit', str(cfg_file),
-            '--workdir', str(tmp_path / 'work'),
             '--dry-run',
         ])
         captured = capsys.readouterr()
@@ -166,10 +166,10 @@ class TestMainSubmit:
         cfg_file.write_text(
             'selection:\n  vis: test.ms\n'
             'cluster:\n  submit:\n    coordinator_mem: 4G\n'
+            '    workdir: ' + str(tmp_path / 'work') + '\n'
         )
         main([
             'submit', str(cfg_file),
-            '--workdir', str(tmp_path / 'work'),
             '--coordinator-mem', '32G',
             '--coordinator-job-name', 'override-job',
             '--dry-run',
@@ -177,6 +177,38 @@ class TestMainSubmit:
         captured = capsys.readouterr()
         assert '#SBATCH --mem=32G' in captured.out
         assert '#SBATCH --job-name=override-job' in captured.out
+
+    def test_submit_workdir_from_yaml(self, tmp_path, capsys):
+        """workdir in YAML submit config is used when --workdir is omitted."""
+        workdir = tmp_path / 'yaml_workdir'
+        cfg_file = tmp_path / 'config.yaml'
+        cfg_file.write_text(
+            'selection:\n  vis: test.ms\n'
+            'cluster:\n  submit:\n'
+            '    workdir: ' + str(workdir) + '\n'
+        )
+        main(['submit', str(cfg_file), '--dry-run'])
+        captured = capsys.readouterr()
+        assert str(workdir) in captured.out
+
+    def test_submit_cli_workdir_overrides_yaml(self, tmp_path, capsys):
+        """--workdir CLI flag overrides YAML submit.workdir."""
+        yaml_workdir = tmp_path / 'yaml_workdir'
+        cli_workdir = tmp_path / 'cli_workdir'
+        cfg_file = tmp_path / 'config.yaml'
+        cfg_file.write_text(
+            'selection:\n  vis: test.ms\n'
+            'cluster:\n  submit:\n'
+            '    workdir: ' + str(yaml_workdir) + '\n'
+        )
+        main([
+            'submit', str(cfg_file),
+            '--workdir', str(cli_workdir),
+            '--dry-run',
+        ])
+        captured = capsys.readouterr()
+        assert str(cli_workdir) in captured.out
+        assert str(yaml_workdir) not in captured.out
 
 
 # ---------------------------------------------------------------------------

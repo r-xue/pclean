@@ -221,6 +221,7 @@ class SubmitConfig(BaseModel):
     spawn per-channel worker jobs.
     """
 
+    workdir: str | None = None
     pixi_project_dir: str | None = None
     pixi_env: str = 'forge'
     coordinator_mem: str = '8G'

@@ -124,6 +124,33 @@ class TestGenerateSbatchScript:
         script = generate_sbatch_script(cfg_file, workdir)
         assert f'mkdir -p "{workdir.resolve()}"' in script
 
+    def test_workdir_from_submit_config(self, tmp_path):
+        """workdir falls back to submit_cfg.workdir when arg is None."""
+        cfg_file = tmp_path / 'config.yaml'
+        cfg_file.write_text('selection:\n  vis: test.ms\n')
+        cfg_workdir = tmp_path / 'cfg_work'
+        submit_cfg = SubmitConfig(workdir=str(cfg_workdir))
+        script = generate_sbatch_script(cfg_file, submit_cfg=submit_cfg)
+        assert str(cfg_workdir.resolve()) in script
+
+    def test_explicit_workdir_overrides_config(self, tmp_path):
+        """Explicit workdir arg takes precedence over submit_cfg.workdir."""
+        cfg_file = tmp_path / 'config.yaml'
+        cfg_file.write_text('selection:\n  vis: test.ms\n')
+        cfg_workdir = tmp_path / 'cfg_work'
+        explicit_workdir = tmp_path / 'explicit_work'
+        submit_cfg = SubmitConfig(workdir=str(cfg_workdir))
+        script = generate_sbatch_script(cfg_file, explicit_workdir, submit_cfg)
+        assert str(explicit_workdir.resolve()) in script
+        assert str(cfg_workdir) not in script
+
+    def test_no_workdir_raises(self, tmp_path):
+        """ValueError when neither workdir arg nor submit_cfg.workdir is set."""
+        cfg_file = tmp_path / 'config.yaml'
+        cfg_file.write_text('selection:\n  vis: test.ms\n')
+        with pytest.raises(ValueError, match='workdir must be provided'):
+            generate_sbatch_script(cfg_file)
+
 
 # ---------------------------------------------------------------------------
 # submit_pclean_slurm

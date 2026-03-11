@@ -12,13 +12,13 @@ Usage from Python::
     cfg = PcleanConfig.from_yaml('my_config.yaml')
     job_id = submit_pclean_slurm(
         config='my_config.yaml',
-        workdir='/scratch/run_01',
         submit_cfg=cfg.cluster.submit,
     )
 
 Or from the CLI::
 
-    pclean submit my_config.yaml --workdir /scratch/run_01
+    pclean submit my_config.yaml
+    pclean submit my_config.yaml --workdir /scratch/run_01  # override
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ _SBATCH_TEMPLATE = textwrap.dedent("""\
 
 def generate_sbatch_script(
     config: str | os.PathLike,
-    workdir: str | os.PathLike,
+    workdir: str | os.PathLike | None = None,
     submit_cfg: SubmitConfig | None = None,
 ) -> str:
     """Generate an sbatch script string for a pclean coordinator job.
@@ -70,18 +70,31 @@ def generate_sbatch_script(
     Args:
         config: Path to a pclean YAML config file.
         workdir: Working directory for the imaging run (output images go here).
+            Falls back to ``submit_cfg.workdir`` if not given.
         submit_cfg: Coordinator job parameters.  When *None*, a default
             :class:`~pclean.config.SubmitConfig` is used.
 
     Returns:
         The sbatch script as a string.
+
+    Raises:
+        ValueError: If *workdir* is not supplied and ``submit_cfg.workdir``
+            is also ``None``.
     """
     if submit_cfg is None:
         from pclean.config import SubmitConfig
         submit_cfg = SubmitConfig()
 
     config = Path(config).resolve()
-    workdir = Path(workdir).resolve()
+
+    # Resolve workdir: explicit arg > submit_cfg.workdir
+    resolved_workdir = workdir if workdir is not None else submit_cfg.workdir
+    if resolved_workdir is None:
+        raise ValueError(
+            'workdir must be provided either as an argument or '
+            'in submit_cfg.workdir'
+        )
+    workdir = Path(resolved_workdir).resolve()
 
     pixi_project_dir = (
         Path(submit_cfg.pixi_project_dir).resolve()
@@ -131,7 +144,7 @@ def generate_sbatch_script(
 
 def submit_pclean_slurm(
     config: str | os.PathLike,
-    workdir: str | os.PathLike,
+    workdir: str | os.PathLike | None = None,
     submit_cfg: SubmitConfig | None = None,
     dry_run: bool = False,
 ) -> str | None:
@@ -144,7 +157,8 @@ def submit_pclean_slurm(
 
     Args:
         config: Path to a pclean YAML config file.
-        workdir: Working directory for the imaging run.
+        workdir: Working directory for the imaging run.  Falls back to
+            ``submit_cfg.workdir`` if not given.
         submit_cfg: Coordinator job parameters.  When *None*, a default
             :class:`~pclean.config.SubmitConfig` is used.
         dry_run: If ``True``, print the script and return without submitting.
@@ -154,6 +168,8 @@ def submit_pclean_slurm(
 
     Raises:
         FileNotFoundError: If the config file does not exist.
+        ValueError: If *workdir* is not supplied and ``submit_cfg.workdir``
+            is also ``None``.
         RuntimeError: If ``sbatch`` fails.
     """
     config = Path(config).resolve()
@@ -170,8 +186,12 @@ def submit_pclean_slurm(
         print(script)
         return None
 
-    # Write script to workdir so it's auditable
-    workdir = Path(workdir).resolve()
+    # Resolve workdir for writing the script (generate_sbatch_script
+    # already validated that a workdir is available).
+    resolved_workdir = workdir if workdir is not None else (
+        submit_cfg.workdir if submit_cfg is not None else None
+    )
+    workdir = Path(resolved_workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     script_path = workdir / 'submit.sh'
     script_path.write_text(script)
