@@ -198,6 +198,7 @@ class SlurmConfig(BaseModel):
     walltime: str = '04:00:00'
     job_mem: str = '20GB'
     cores_per_job: int = 1
+    job_name: str | None = None
     job_extra_directives: list[str] = Field(default_factory=list)
     python: str | None = None
     local_directory: str | None = None
