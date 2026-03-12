@@ -118,20 +118,40 @@ class SerialImager:
         if self._use_python_automask:
             self._init_python_automask()
 
+    @staticmethod
+    def _suppress_table_msgs():
+        """Return the ``suppress_casalog_msgs`` context manager.
+
+        Indirection so the import stays lazy and the decorator
+        argument (message list) lives in one place.
+        """
+        from pclean.utils import suppress_casalog_msgs
+
+        return suppress_casalog_msgs(['No table opened'])
+
     def teardown(self) -> None:
-        """Release all C++ tool resources."""
-        if self.si_tool is not None:
-            self.si_tool.done()
-            self.si_tool = None
-        for sd in self.sd_tools.values():
-            sd.done()
-        self.sd_tools.clear()
-        for sn in self.sn_tools.values():
-            sn.done()
-        self.sn_tools.clear()
-        if self.ib_tool is not None:
-            self.ib_tool.done()
-            self.ib_tool = None
+        """Release all C++ tool resources.
+
+        The CASA C++ ``table::done()`` internally calls ``table::name()``
+        for ``LogOrigin``, which emits a spurious
+        ``INFO name:: No table opened.`` message for every internal
+        table reference that was already closed.  We use
+        ``casalog.filterMsg`` to suppress this specific message during
+        teardown, then clear the filter list afterwards.
+        """
+        with self._suppress_table_msgs():
+            if self.si_tool is not None:
+                self.si_tool.done()
+                self.si_tool = None
+            for sd in self.sd_tools.values():
+                sd.done()
+            self.sd_tools.clear()
+            for sn in self.sn_tools.values():
+                sn.done()
+            self.sn_tools.clear()
+            if self.ib_tool is not None:
+                self.ib_tool.done()
+                self.ib_tool = None
 
     # ------------------------------------------------------------------
     # Imaging steps (public, individually callable)

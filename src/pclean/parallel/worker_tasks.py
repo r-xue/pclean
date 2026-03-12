@@ -118,15 +118,23 @@ def _flush_table_cache(imagename: str) -> None:
 
         # Log residual cache entries (debug-level) so developers can
         # see if entries are accumulating across tasks.
-        cached = tb.showcache(verbose=False)
-        if cached:
-            log.debug(
-                'Table cache has %d entries after subcube task (%s …)',
-                len(cached),
-                cached[0] if cached else '',
-            )
+        #
+        # Both showcache() and done() internally call C++ table::name()
+        # for LogOrigin, which emits a spurious "No table opened." INFO
+        # message when the tool has no table open.  Suppress this
+        # specific message via casalog.filterMsg/clearFilterMsgList.
+        from pclean.utils import suppress_casalog_msgs
 
-        tb.done()
+        with suppress_casalog_msgs(['No table opened']):
+            if log.isEnabledFor(logging.DEBUG):
+                cached = tb.showcache(verbose=False)
+                if cached:
+                    log.debug(
+                        'Table cache has %d entries after subcube task (%s …)',
+                        len(cached),
+                        cached[0] if cached else '',
+                    )
+            tb.done()
     except Exception:
         pass
 
