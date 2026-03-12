@@ -359,16 +359,17 @@ def _partition_cube_even(
 ) -> list[PcleanConfig]:
     """Simple even partition of channels across *nparts* workers.
 
-    When ``start`` and ``width`` are both frequency strings we first
-    resolve the *actual* output frequency grid via a lightweight
-    ``defineImage(nchan=full)`` call.  This ensures subcube start
-    frequencies match the grid that ``MSTransformRegridder::calcChanFreqs``
-    produces for the full cube, avoiding the per-channel alignment
-    drift that occurs when each single-channel subcube independently
-    calls ``calcChanFreqs``.
+    When ``start`` and ``width`` are both frequency strings the output
+    grid is deterministic (``start_hz + i * width_hz``) and we compute
+    it arithmetically — no MS access or ``makepsf()`` needed.  CASA's
+    ``MSTransformRegridder::calcChanFreqs`` produces the same
+    equidistant grid for frequency-specified start/width, so the
+    arithmetic result is exact.
 
-    Falls back to arithmetic ``start + i * width`` when the grid
-    cannot be resolved.
+    When ``start`` or ``width`` are channel-based integers we fall back
+    to ``_resolve_frequency_grid()`` (which calls ``defineimage`` +
+    ``makepsf`` on a tiny 32×32 image) only if ``fracbw`` is needed
+    for ``briggsbwtaper``.
     """
     if nchan <= 0:
         log.warning('nchan unknown — falling back to single partition')
@@ -381,11 +382,20 @@ def _partition_cube_even(
     start_hz = _parse_freq_hz(orig_start)
     width_hz = _parse_freq_hz(orig_width)
 
-    # Try to resolve the actual frequency grid that CASA would produce
-    # for a monolithic nchan-channel image.
+    # When start and width are both in frequency units the output grid
+    # is just start_hz + i * width_hz — no need to materialise an
+    # image via makepsf().  Only fall back to the heavy
+    # _resolve_frequency_grid() path for channel-based start/width
+    # (where we genuinely need MS metadata to map channels → Hz).
     resolved_freqs: list[float] | None = None
     if start_hz is not None and width_hz is not None and nchan > 1:
-        resolved_freqs = _resolve_frequency_grid(config, nchan)
+        resolved_freqs = [start_hz + i * width_hz for i in range(nchan)]
+        log.info(
+            'Resolved frequency grid (arithmetic): %d channels, '
+            'freq[0]=%.6f GHz, delta=%.6f MHz',
+            nchan, resolved_freqs[0] / 1e9,
+            width_hz / 1e6,
+        )
 
     # For briggsbwtaper: pre-compute fracbw from the *full* cube so that
     # single-channel subcubes inherit a valid fractional bandwidth.
