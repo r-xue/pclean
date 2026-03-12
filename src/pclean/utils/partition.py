@@ -263,11 +263,19 @@ def _resolve_frequency_grid(
 
         # Disable cube gridding so makepsf runs in-process (no
         # sub-imager / normalizer setup needed for the grid query).
-        si.setcubegridding(False)
+        # setcubegridding is only available in patched casatools;
+        # skip gracefully on unpatched builds — the monolithic path
+        # still works, just slightly slower for large nchan.
+        if hasattr(si, 'setcubegridding'):
+            si.setcubegridding(False)
 
         impars = dict(config.to_casa_impars()['0'])
         impars['imagename'] = imgname
-        # Use a tiny spatial grid — we only need the spectral axis.
+        # Use a tiny 32×32 spatial grid — we only need the spectral
+        # axis.  Memory for the full-cube PSF is therefore just
+        # 32×32×1×nchan×4 bytes (e.g. ~16 MB for 4000 channels),
+        # so even with cube gridding disabled (monolithic allocation)
+        # this is safe on the coordinator.
         impars['imsize'] = [32, 32]
         impars['nchan'] = nchan
         impars['restart'] = False
