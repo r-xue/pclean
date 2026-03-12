@@ -95,7 +95,7 @@ from CASA `tclean`.  Internally it calls:
 config = PcleanConfig.from_flat_kwargs(vis='my.ms', imagename='test', ...)
 ```
 
-which routes each keyword into the correct sub-model.  When a `--config`
+which routes each keyword into the correct sub-model.  When a `--pconfig`
 YAML file is also provided, the flat kwargs override the file values.
 
 ## Merge Order
@@ -103,7 +103,7 @@ YAML file is also provided, the flat kwargs override the file values.
 When multiple sources are provided the merge priority is (highest wins):
 
 1. Explicit keyword arguments / CLI flags
-2. `--config` YAML file
+2. `--pconfig` YAML file
 3. `--preset` (later `--preset` flags override earlier ones)
 4. Built-in pydantic defaults
 
@@ -133,7 +133,7 @@ The `python -m pclean` CLI supports three config-related flags:
 
 | Flag | Purpose |
 |------|---------|
-| `--config FILE` | Load a YAML config as the base |
+| `--pconfig FILE` | Load a YAML config as the base |
 | `--preset NAME` | Load a named preset as the base |
 | `--dump-config FILE` | Write the resolved config to YAML and exit |
 
@@ -233,7 +233,7 @@ PcleanConfig.from_flat_kwargs()  # build config
 |------|------|
 | `src/pclean/config.py` | Sub-model definitions, `PcleanConfig`, YAML I/O, merge, flat-kwargs bridge, all `to_casa_*()` methods, `make_subcube_config()` |
 | `src/pclean/pclean.py` | `pclean()` entry point; builds `PcleanConfig`, dispatches to engines |
-| `src/pclean/__main__.py` | CLI; `--config`, `--preset`, `--dump-config`, dot-notation overrides |
+| `src/pclean/__main__.py` | CLI; `--pconfig`, `--preset`, `--dump-config`, dot-notation overrides |
 | `src/pclean/imaging/serial_imager.py` | Accepts `PcleanConfig`; pre-computes CASA dicts in `__init__` |
 | `src/pclean/parallel/worker_tasks.py` | Dask worker functions; cube tasks accept config dicts, continuum tasks accept CASA bundles |
 | `src/pclean/parallel/cube_parallel.py` | Cube engine; accepts `PcleanConfig`, serializes subcube configs |
