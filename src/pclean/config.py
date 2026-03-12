@@ -195,7 +195,7 @@ class SlurmConfig(BaseModel):
 
     queue: str | None = None
     account: str | None = None
-    walltime: str = '04:00:00'
+    walltime: str = '24:00:00'
     job_mem: str = '20GB'
     cores_per_job: int = 1
     job_name: str | None = None

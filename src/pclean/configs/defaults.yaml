@@ -128,7 +128,7 @@ cluster:
   slurm:
     queue: null
     account: null
-    walltime: 04:00:00
+    walltime: 24:00:00
     job_mem: 20GB
     cores_per_job: 1
     job_name: null

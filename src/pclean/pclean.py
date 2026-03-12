@@ -148,7 +148,7 @@ def pclean(
     # SLURM options (cluster_type='slurm')
     slurm_queue: str | None = None,
     slurm_account: str | None = None,
-    slurm_walltime: str = '04:00:00',
+    slurm_walltime: str = '24:00:00',
     slurm_job_mem: str = '20GB',
     slurm_cores_per_job: int = 1,
     slurm_job_name: str | None = None,

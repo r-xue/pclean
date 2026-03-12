@@ -162,7 +162,7 @@ def _cli_to_flat_kwargs(args: argparse.Namespace) -> dict:
     kwargs['cluster_type'] = kwargs.pop('cluster_type', 'local')
     kwargs['slurm_queue'] = kwargs.pop('slurm_queue', None)
     kwargs['slurm_account'] = kwargs.pop('slurm_account', None)
-    kwargs['slurm_walltime'] = kwargs.pop('slurm_walltime', '04:00:00')
+    kwargs['slurm_walltime'] = kwargs.pop('slurm_walltime', '24:00:00')
     kwargs['slurm_job_mem'] = kwargs.pop('slurm_job_mem', '20GB')
     kwargs['slurm_cores_per_job'] = kwargs.pop('slurm_cores_per_job', 1)
     kwargs['slurm_python'] = kwargs.pop('slurm_python', None)
