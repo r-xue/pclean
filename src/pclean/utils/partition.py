@@ -253,15 +253,29 @@ def _resolve_frequency_grid(
             selrec = dict(selpars[ms_key])
             selrec.setdefault('usescratch', False)
             selrec.setdefault('readonly', True)
+            log.debug(
+                '_resolve_frequency_grid selectdata[%s]: msname=%r  type=%s',
+                ms_key,
+                selrec.get('msname'),
+                type(selrec.get('msname')).__name__,
+            )
             si.selectdata(selpars=selrec)
 
         # Disable cube gridding so makepsf runs in-process (no
         # sub-imager / normalizer setup needed for the grid query).
-        si.setcubegridding(False)
+        # setcubegridding is only available in patched casatools;
+        # skip gracefully on unpatched builds — the monolithic path
+        # still works, just slightly slower for large nchan.
+        if hasattr(si, 'setcubegridding'):
+            si.setcubegridding(False)
 
         impars = dict(config.to_casa_impars()['0'])
         impars['imagename'] = imgname
-        # Use a tiny spatial grid — we only need the spectral axis.
+        # Use a tiny 32×32 spatial grid — we only need the spectral
+        # axis.  Memory for the full-cube PSF is therefore just
+        # 32×32×1×nchan×4 bytes (e.g. ~16 MB for 4000 channels),
+        # so even with cube gridding disabled (monolithic allocation)
+        # this is safe on the coordinator.
         impars['imsize'] = [32, 32]
         impars['nchan'] = nchan
         impars['restart'] = False
@@ -345,16 +359,17 @@ def _partition_cube_even(
 ) -> list[PcleanConfig]:
     """Simple even partition of channels across *nparts* workers.
 
-    When ``start`` and ``width`` are both frequency strings we first
-    resolve the *actual* output frequency grid via a lightweight
-    ``defineImage(nchan=full)`` call.  This ensures subcube start
-    frequencies match the grid that ``MSTransformRegridder::calcChanFreqs``
-    produces for the full cube, avoiding the per-channel alignment
-    drift that occurs when each single-channel subcube independently
-    calls ``calcChanFreqs``.
+    When ``start`` and ``width`` are both frequency strings the output
+    grid is deterministic (``start_hz + i * width_hz``) and we compute
+    it arithmetically — no MS access or ``makepsf()`` needed.  CASA's
+    ``MSTransformRegridder::calcChanFreqs`` produces the same
+    equidistant grid for frequency-specified start/width, so the
+    arithmetic result is exact.
 
-    Falls back to arithmetic ``start + i * width`` when the grid
-    cannot be resolved.
+    When ``start`` or ``width`` are channel-based integers we fall back
+    to ``_resolve_frequency_grid()`` (which calls ``defineimage`` +
+    ``makepsf`` on a tiny 32×32 image) only if ``fracbw`` is needed
+    for ``briggsbwtaper``.
     """
     if nchan <= 0:
         log.warning('nchan unknown — falling back to single partition')
@@ -367,11 +382,20 @@ def _partition_cube_even(
     start_hz = _parse_freq_hz(orig_start)
     width_hz = _parse_freq_hz(orig_width)
 
-    # Try to resolve the actual frequency grid that CASA would produce
-    # for a monolithic nchan-channel image.
+    # When start and width are both in frequency units the output grid
+    # is just start_hz + i * width_hz — no need to materialise an
+    # image via makepsf().  Only fall back to the heavy
+    # _resolve_frequency_grid() path for channel-based start/width
+    # (where we genuinely need MS metadata to map channels → Hz).
     resolved_freqs: list[float] | None = None
     if start_hz is not None and width_hz is not None and nchan > 1:
-        resolved_freqs = _resolve_frequency_grid(config, nchan)
+        resolved_freqs = [start_hz + i * width_hz for i in range(nchan)]
+        log.info(
+            'Resolved frequency grid (arithmetic): %d channels, '
+            'freq[0]=%.6f GHz, delta=%.6f MHz',
+            nchan, resolved_freqs[0] / 1e9,
+            width_hz / 1e6,
+        )
 
     # For briggsbwtaper: pre-compute fracbw from the *full* cube so that
     # single-channel subcubes inherit a valid fractional bandwidth.

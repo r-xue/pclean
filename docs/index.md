@@ -8,6 +8,7 @@
 dev_guide
 config_current
 update_defaults
+slurm_submit_guide
 ```
 
 ```{toctree}

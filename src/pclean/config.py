@@ -195,9 +195,10 @@ class SlurmConfig(BaseModel):
 
     queue: str | None = None
     account: str | None = None
-    walltime: str = '04:00:00'
+    walltime: str = '24:00:00'
     job_mem: str = '20GB'
     cores_per_job: int = 1
+    job_name: str | None = None
     job_extra_directives: list[str] = Field(default_factory=list)
     python: str | None = None
     local_directory: str | None = None
@@ -205,6 +206,33 @@ class SlurmConfig(BaseModel):
     job_script_prologue: list[str] = Field(default_factory=list)
 
     @field_validator('job_extra_directives', 'job_script_prologue', mode='before')
+    @classmethod
+    def _coerce_none_to_list(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        return list(v)
+
+
+class SubmitConfig(BaseModel):
+    """SLURM coordinator (submit) job parameters.
+
+    These control the *coordinator* SLURM job that runs
+    ``python -m pclean --pconfig <yaml>`` and lets dask-jobqueue
+    spawn per-channel worker jobs.
+    """
+
+    workdir: str | None = None
+    pixi_project_dir: str | None = None
+    pixi_env: str = 'forge'
+    coordinator_mem: str = '8G'
+    coordinator_cpus: int = 2
+    coordinator_walltime: str = '24:00:00'
+    coordinator_job_name: str = 'pclean-coordinator'
+    extra_sbatch: list[str] = Field(default_factory=list)
+    log_dir: str | None = None
+    psrecord: bool = True
+
+    @field_validator('extra_sbatch', mode='before')
     @classmethod
     def _coerce_none_to_list(cls, v: Any) -> list[str]:
         if v is None:
@@ -227,6 +255,7 @@ class ClusterConfig(BaseModel):
     keep_partimages: bool = False
     concat_mode: Literal['auto', 'paged', 'virtual', 'movevirtual'] = 'auto'
     slurm: SlurmConfig = Field(default_factory=SlurmConfig)
+    submit: SubmitConfig = Field(default_factory=SubmitConfig)
 
 
 # ======================================================================
@@ -389,6 +418,13 @@ class PcleanConfig(BaseModel):
         _clu_type_key = 'cluster_type'
         # SLURM flat keys (slurm_* prefix -> nested slurm.*)
         _slurm_prefix = 'slurm_'
+        # Submit/coordinator flat keys (coordinator_* prefix -> nested submit.*)
+        _coordinator_prefix = 'coordinator_'
+        # Submit flat keys that don't use the coordinator_ prefix
+        _submit_keys = {'pixi_project_dir', 'pixi_env', 'psrecord'}
+        # Submit extra_sbatch
+        _submit_extra_sbatch_key = 'extra_sbatch'
+        sub: dict[str, Any] = {}
 
         for k, v in kwargs.items():
             if k in _sel_keys:
@@ -414,9 +450,17 @@ class PcleanConfig(BaseModel):
             if k.startswith(_slurm_prefix):
                 slurm_field = k[len(_slurm_prefix):]
                 slm[slurm_field] = v
+            if k.startswith(_coordinator_prefix):
+                sub[k] = v
+            if k in _submit_keys:
+                sub[k] = v
+            if k == _submit_extra_sbatch_key:
+                sub[k] = v
 
         if slm:
             clu['slurm'] = slm
+        if sub:
+            clu['submit'] = sub
 
         data: dict[str, Any] = {}
         if sel:
@@ -471,11 +515,14 @@ class PcleanConfig(BaseModel):
         # Cluster -> flat
         clu = self.cluster.model_dump()
         slurm = clu.pop('slurm', {})
+        submit = clu.pop('submit', {})
         clu_type = clu.pop('type', 'local')
         kw['cluster_type'] = clu_type
         kw.update(clu)
         for sk, sv in slurm.items():
             kw[f'slurm_{sk}'] = sv
+        for sk, sv in submit.items():
+            kw[sk] = sv
         return kw
 
     # ------------------------------------------------------------------

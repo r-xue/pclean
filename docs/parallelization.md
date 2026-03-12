@@ -183,3 +183,36 @@ pclean(
 - Requires `npixels=0`
 
 See `task_tclean.py` lines 218–236 in casa6.
+
+### Cube Gridding Must Stay Enabled for nchan=1 Subcubes
+
+In upstream CASA the C++ default is `doingCubeGridding_p = True`.
+For `specmode='cube'` the C++ guard condition is:
+
+```cpp
+if ((itsMaxShape[3] > 1 || mode.contains("cube")) && doingCubeGridding_p)
+```
+
+This means cube-mode images **always** take the `CubeMajorCycleAlgorithm`
+path — even with `nchan=1` — because `mode.contains("cube")` is true.
+The `CubeMajorCycleAlgorithm` runs a different gridding code path than
+the non-cube `runMajorCycle`, and also handles all PSF/residual
+normalization internally (gatherpsfweight, dividepsfbyweight, etc.).
+
+**pclean must NOT call `setcubegridding(False)` for single-channel
+subcubes.**  Disabling cube gridding switches to the non-cube
+`runMajorCycle` path, producing fundamentally different gridded
+visibilities and causing residual flux errors of 3×–21× compared to
+the result from the same data imaged with cube gridding enabled.
+This was verified empirically (2026-03-11) by comparing serial pclean
+(nchan=1, cube gridding disabled) against tclean (nchan=1, default cube
+gridding enabled).
+
+This applies regardless of whether the MS is backed by standard CTDS or
+ADIOS2 storage managers.  Cube gridding is always left at the C++
+default (enabled).
+
+The only place pclean calls `setcubegridding(False)` is in
+`partition._resolve_frequency_grid()`, which creates a throwaway
+tiny-image synthesisimager purely to resolve the spectral coordinate
+grid — not for science imaging.

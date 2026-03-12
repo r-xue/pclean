@@ -118,15 +118,23 @@ def _flush_table_cache(imagename: str) -> None:
 
         # Log residual cache entries (debug-level) so developers can
         # see if entries are accumulating across tasks.
-        cached = tb.showcache(verbose=False)
-        if cached:
-            log.debug(
-                'Table cache has %d entries after subcube task (%s …)',
-                len(cached),
-                cached[0] if cached else '',
-            )
+        #
+        # Both showcache() and done() internally call C++ table::name()
+        # for LogOrigin, which emits a spurious "No table opened." INFO
+        # message when the tool has no table open.  Suppress this
+        # specific message via casalog.filterMsg/clearFilterMsgList.
+        from pclean.utils import suppress_casalog_msgs
 
-        tb.done()
+        with suppress_casalog_msgs(['No table opened']):
+            if log.isEnabledFor(logging.DEBUG):
+                cached = tb.showcache(verbose=False)
+                if cached:
+                    log.debug(
+                        'Table cache has %d entries after subcube task (%s …)',
+                        len(cached),
+                        cached[0] if cached else '',
+                    )
+            tb.done()
     except Exception:
         pass
 
@@ -165,6 +173,8 @@ def run_subcube(config_dict: dict) -> dict:
     force_omp_single_thread()
 
     config = PcleanConfig.model_validate(config_dict)
+
+    log.debug('run_subcube: vis=%r  imagename=%r  cwd=%s', config.selection.vis, config.imagename, os.getcwd())
 
     # Resolve imagename to absolute *before* we chdir so that output
     # images always land in the user's original working directory.

@@ -88,7 +88,6 @@ class SerialImager:
         self._major_count = 0
         self._converged = False
         self._adios2_detected = False
-        self._cube_gridding_disabled = False
 
         # Python auto-multithresh state
         self._use_python_automask = (
@@ -112,27 +111,47 @@ class SerialImager:
         self._init_imager()
         self._init_normalizers()
         self._set_weighting()
-        if self.config.niter > 0:
+        if self.config.niter > 0 or self.config.deconvolution.restoration or self.config.deconvolution.pbcor:
             self._init_deconvolvers()
         if self._init_iter:
             self._init_iteration_control()
         if self._use_python_automask:
             self._init_python_automask()
 
+    @staticmethod
+    def _suppress_table_msgs():
+        """Return the ``suppress_casalog_msgs`` context manager.
+
+        Indirection so the import stays lazy and the decorator
+        argument (message list) lives in one place.
+        """
+        from pclean.utils import suppress_casalog_msgs
+
+        return suppress_casalog_msgs(['No table opened'])
+
     def teardown(self) -> None:
-        """Release all C++ tool resources."""
-        if self.si_tool is not None:
-            self.si_tool.done()
-            self.si_tool = None
-        for sd in self.sd_tools.values():
-            sd.done()
-        self.sd_tools.clear()
-        for sn in self.sn_tools.values():
-            sn.done()
-        self.sn_tools.clear()
-        if self.ib_tool is not None:
-            self.ib_tool.done()
-            self.ib_tool = None
+        """Release all C++ tool resources.
+
+        The CASA C++ ``table::done()`` internally calls ``table::name()``
+        for ``LogOrigin``, which emits a spurious
+        ``INFO name:: No table opened.`` message for every internal
+        table reference that was already closed.  We use
+        ``casalog.filterMsg`` to suppress this specific message during
+        teardown, then clear the filter list afterwards.
+        """
+        with self._suppress_table_msgs():
+            if self.si_tool is not None:
+                self.si_tool.done()
+                self.si_tool = None
+            for sd in self.sd_tools.values():
+                sd.done()
+            self.sd_tools.clear()
+            for sn in self.sn_tools.values():
+                sn.done()
+            self.sn_tools.clear()
+            if self.ib_tool is not None:
+                self.ib_tool.done()
+                self.ib_tool = None
 
     # ------------------------------------------------------------------
     # Imaging steps (public, individually callable)
@@ -359,14 +378,14 @@ class SerialImager:
                     self.update_mask()
                     converged = self.has_converged(nmajor) or (not did)
 
-                if self.config.deconvolution.restoration:
-                    t0 = time.monotonic()
-                    self.restore()
-                    log.info('%s restore:        %.1fs', self._tag, time.monotonic() - t0)
-                if self.config.deconvolution.pbcor:
-                    t0 = time.monotonic()
-                    self.pbcor()
-                    log.info('%s pbcor:          %.1fs', self._tag, time.monotonic() - t0)
+            if self.config.deconvolution.restoration:
+                t0 = time.monotonic()
+                self.restore()
+                log.info('%s restore:        %.1fs', self._tag, time.monotonic() - t0)
+            if self.config.deconvolution.pbcor:
+                t0 = time.monotonic()
+                self.pbcor()
+                log.info('%s pbcor:          %.1fs', self._tag, time.monotonic() - t0)
 
             log.info('%s run total:      %.1fs', self._tag, time.monotonic() - t_total)
             return self._summary()
@@ -397,10 +416,12 @@ class SerialImager:
     def _detect_adios2(self) -> None:
         """Check whether any input MS uses Adios2StMan.
 
-        Sets ``_adios2_detected`` so that ``_init_imager()`` can
-        conditionally call ``setcubegridding(False)`` for single-channel
-        subcubes.  Also forces ``OMP_NUM_THREADS=1`` as a general
-        thread-safety precaution for ADIOS2-backed storage managers.
+        Sets ``_adios2_detected`` and forces ``OMP_NUM_THREADS=1`` as
+        a thread-safety precaution for ADIOS2-backed storage managers.
+
+        Note: cube gridding is intentionally left enabled (the C++
+        default) even for ADIOS2 MS files — see ``_init_imager()``
+        for rationale.
         """
         self._adios2_detected = False
         vis = self.config.selection.vis
@@ -427,37 +448,33 @@ class SerialImager:
         ct = _ct()
         self.si_tool = ct.synthesisimager()
 
-        # Disable cube gridding for single-channel (or MFS) subcubes.
-        # With nchan<=1 the CubeMajorCycleAlgorithm path is pure overhead:
+        # NOTE: Cube gridding (CubeMajorCycleAlgorithm) must ALWAYS stay
+        # enabled for cube-specmode imaging, even for single-channel
+        # (nchan=1) subcubes and even for ADIOS2-backed MS files.
         #
-        #   1. It creates a redundant secondary imager that re-opens the MS
-        #      (unnecessary when there is only one channel to grid).
-        #   2. Its internal copyMask/SetupNewTable for the residual mask0
-        #      subtable hits a casacore table-cache bug on the 2nd+ major
-        #      cycle — the mask0 created during gridding is still in the
-        #      process-global table cache when copyMask tries to SetupNew-
-        #      Table for the same path, producing a noisy WARN per subcube
-        #      per major cycle.
-        #   3. For ADIOS2-backed MS files, the secondary imager triggers
-        #      a SetSelection shape mismatch on indirect-array columns.
+        # Why: In upstream CASA, the C++ default is
+        # doingCubeGridding_p = True, and the guard condition is:
         #
-        # For multi-channel subcubes we keep cube gridding enabled so the
-        # C++ layer can chunk channels within available RAM.
-        nchan_this = self.config.image.nchan
-        if nchan_this <= 1:
-            try:
-                self.si_tool.setcubegridding(False)
-                self._cube_gridding_disabled = True
-                log.info('%s Disabled cube gridding (nchan=%d)', self._tag, nchan_this)
-            except AttributeError:
-                log.debug(
-                    'synthesisimager.setcubegridding() not available '
-                    '— falling back to default cube gridding path',
-                )
+        #   if (itsMaxShape[3] > 1 || mode.contains("cube"))
+        #       && doingCubeGridding_p)
+        #
+        # So cube-mode images always take the CubeMajorCycleAlgorithm
+        # path — even with nchan=1 — which runs the gridder differently
+        # than the non-cube runMajorCycle path.  Disabling cube gridding
+        # for nchan=1 subcubes switches to the non-cube path, producing
+        # fundamentally different gridded visibilities and causing
+        # residual flux errors of 3×–21× compared to the full-cube
+        # result (verified empirically 2026-03-11).
+        #
+        # We do NOT call setcubegridding(False) here.  The C++ default
+        # (True) is correct for all cube-mode imaging.
 
         # Select data from each MS
         for ms_key in sorted(self._selpars.keys()):
             selrec = dict(self._selpars[ms_key])
+            log.debug(
+                '%s selectdata selpars[%s]: msname=%r  cwd=%s', self._tag, ms_key, selrec.get('msname'), os.getcwd()
+            )
             self.si_tool.selectdata(selpars=selrec)
 
         # Define images for each field
@@ -560,15 +577,18 @@ class SerialImager:
         the residual by a factor of *sumwt* (~10^5–10^8 for typical
         ALMA / VLA data).
 
-        Python-side normalizer calls are needed when:
-          - specmode is MFS (or MTMFS),  OR
-          - cube gridding was explicitly disabled via
-            ``setcubegridding(False)`` for single-channel subcubes,
-            because the ``CubeMajorCycleAlgorithm`` is no longer active
-            and the C++ layer behaves like the non-cube path.
+        Python-side normalizer calls are needed only when:
+          - specmode is MFS, or
+          - deconvolver is MTMFS (which auto-disables cube gridding in
+            the C++ layer).
+
+        Cube gridding is always left enabled (the C++ default) for all
+        cube-specmode imaging — including nchan=1 subcubes — so the
+        ``CubeMajorCycleAlgorithm`` path is always active and handles
+        normalization internally.
         """
         deconv = self._decpars.get('0', {}).get('deconvolver', '')
-        return self._is_mfs or deconv == 'mtmfs' or self._cube_gridding_disabled
+        return self._is_mfs or deconv == 'mtmfs'
 
     def _normalize_psf(self) -> None:
         """Gather PSF weight, divide, fit beam, normalize weight image.

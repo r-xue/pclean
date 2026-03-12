@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pprint import pformat
 
 log = logging.getLogger(__name__)
@@ -197,6 +198,9 @@ class DaskClusterManager:
         slurm_walltime: Per-job wall time (``--time``).
         slurm_job_mem: Per-job memory (``--mem``).
         slurm_cores_per_job: CPUs per SLURM job (``--cpus-per-task``).
+        slurm_job_name: SLURM job name (``--job-name``).  Appears in ``squeue``
+            output under the NAME column, making workers easy to identify.
+            Defaults to ``None`` (dask-jobqueue uses ``'dask-worker'``).
         slurm_job_extra_directives: Extra ``#SBATCH`` lines.
         slurm_python: Path to the Python executable on compute nodes.
         slurm_local_directory: Worker scratch directory on compute nodes.
@@ -215,9 +219,10 @@ class DaskClusterManager:
         cluster_type: str = 'local',
         slurm_queue: str | None = None,
         slurm_account: str | None = None,
-        slurm_walltime: str = '04:00:00',
+        slurm_walltime: str = '24:00:00',
         slurm_job_mem: str = '20GB',
         slurm_cores_per_job: int = 1,
+        slurm_job_name: str | None = None,
         slurm_job_extra_directives: list[str] | None = None,
         slurm_python: str | None = None,
         slurm_local_directory: str | None = None,
@@ -241,6 +246,7 @@ class DaskClusterManager:
         self.slurm_walltime = slurm_walltime
         self.slurm_job_mem = slurm_job_mem
         self.slurm_cores_per_job = slurm_cores_per_job
+        self.slurm_job_name = slurm_job_name
         self.slurm_job_extra_directives = slurm_job_extra_directives or []
         self.slurm_python = slurm_python
         self.slurm_local_directory = slurm_local_directory
@@ -321,6 +327,7 @@ class DaskClusterManager:
         """Create a ``dask_jobqueue.SLURMCluster`` and scale to *nworkers* jobs."""
         try:
             from dask_jobqueue import SLURMCluster
+            from dask_jobqueue.slurm import SLURMJob
         except ImportError as exc:
             raise ImportError(
                 "cluster_type='slurm' requires dask-jobqueue: "
@@ -346,6 +353,34 @@ class DaskClusterManager:
             log_directory=self.slurm_log_directory,
             job_extra_directives=self.slurm_job_extra_directives,
         )
+
+        if self.slurm_job_name is not None:
+            slurm_kwargs['job_name'] = self.slurm_job_name
+
+            # dask-jobqueue uses the same job_name for every sbatch job.
+            # Subclass SLURMJob to append a sequential index so each worker
+            # is distinguishable in ``squeue`` output (e.g. pclean-w-0, pclean-w-1).
+            import itertools
+
+            counter = itertools.count()
+
+            class _NumberedSLURMJob(SLURMJob):
+                def __init__(self, *args, **kwargs):
+                    jn = kwargs.get('job_name')
+                    if jn is not None:
+                        kwargs['job_name'] = f'{jn}-worker{next(counter)}'
+                    super().__init__(*args, **kwargs)
+                    # Merge stderr into the same file as stdout so each
+                    # worker produces a single .out log instead of
+                    # separate .out and .err files.
+                    if self.job_header is not None:
+                        self.job_header = re.sub(
+                            r'(#SBATCH\s+-e\s+\S+)\.err',
+                            r'\1.out',
+                            self.job_header,
+                        )
+
+            slurm_kwargs['job_cls'] = _NumberedSLURMJob
 
         if self.slurm_python:
             slurm_kwargs['python'] = self.slurm_python

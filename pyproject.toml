@@ -171,11 +171,11 @@ distributed = ">=2025.12.0"
 dask-jobqueue = ">=0.9.0"   # Recommended if running on HPC clusters
 
 [tool.pixi.feature.casa-pypi.pypi-dependencies]
-casatools = "*"
+casatools = ">=6.5"
 casatasks = "*"
 
 [tool.pixi.feature.casa-forge.dependencies]
-casatools = "*"
+casatools = ">=6.5"
 casatasks = "*"
 
 [tool.pixi.feature.dev.dependencies]
