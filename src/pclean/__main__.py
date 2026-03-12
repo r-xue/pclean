@@ -21,148 +21,16 @@ import argparse
 import json
 import logging
 
+from pclean._cli_parser import build_cli_parser
+
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog='pclean',
-        description='Parallel CLEAN imaging with Dask and CASA tools',
-    )
-    # Config file
-    p.add_argument(
-        '--pconfig',
-        default=None,
-        help='Path to a YAML configuration file',
-    )
-    p.add_argument(
-        '--preset',
-        action='append',
-        default=None,
-        help='Named preset(s) to load (repeatable; later presets override earlier ones)',
-    )
-    p.add_argument(
-        '--dump-config',
-        default=None,
-        metavar='PATH',
-        help='Dump the effective (merged) configuration to a YAML file and exit',
-    )
-    # Data selection
-    p.add_argument('--vis', nargs='+', default=None)
-    p.add_argument('--field', default='')
-    p.add_argument('--spw', default='')
-    p.add_argument('--timerange', default='')
-    p.add_argument('--uvrange', default='')
-    p.add_argument('--antenna', default='')
-    p.add_argument('--scan', default='')
-    p.add_argument('--observation', default='')
-    p.add_argument('--intent', default='')
-    p.add_argument('--datacolumn', default='corrected')
-    # Image
-    p.add_argument('--imagename', default='')
-    p.add_argument('--imsize', nargs='+', type=int, default=[100])
-    p.add_argument('--cell', default='1arcsec')
-    p.add_argument('--phasecenter', default='')
-    p.add_argument('--stokes', default='I')
-    p.add_argument('--projection', default='SIN')
-    # Spectral
-    p.add_argument('--specmode', default='mfs')
-    p.add_argument('--nchan', type=int, default=-1)
-    p.add_argument('--start', default='')
-    p.add_argument('--width', default='')
-    p.add_argument('--outframe', default='LSRK')
-    p.add_argument('--restfreq', nargs='*', default=[])
-    p.add_argument('--interpolation', default='linear')
-    # Gridder
-    p.add_argument('--gridder', default='standard')
-    p.add_argument('--wprojplanes', type=int, default=1)
-    p.add_argument('--pblimit', type=float, default=0.2)
-    # Deconvolver
-    p.add_argument('--deconvolver', default='hogbom')
-    p.add_argument('--scales', nargs='*', type=int, default=[])
-    p.add_argument('--nterms', type=int, default=2)
-    # Weighting
-    p.add_argument('--weighting', default='natural')
-    p.add_argument('--robust', type=float, default=0.5)
-    p.add_argument('--uvtaper', nargs='*', default=[])
-    # Iteration
-    p.add_argument('--niter', type=int, default=0)
-    p.add_argument('--gain', type=float, default=0.1)
-    p.add_argument('--threshold', default='0.0mJy')
-    p.add_argument('--nsigma', type=float, default=0.0)
-    p.add_argument('--cycleniter', type=int, default=-1)
-    p.add_argument('--cyclefactor', type=float, default=1.0)
-    p.add_argument('--nmajor', type=int, default=-1)
-    # Masking
-    p.add_argument('--usemask', default='user')
-    p.add_argument('--mask', default='')
-    p.add_argument('--pbmask', type=float, default=0.0)
-    p.add_argument(
-        '--python-automask',
-        dest='python_automask',
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help='Use Python automasking instead of C++ (default: true)',
-    )
-    # Restoration
-    p.add_argument('--restoration', action='store_true', default=True)
-    p.add_argument('--no-restoration', dest='restoration', action='store_false')
-    p.add_argument('--pbcor', action='store_true', default=False)
-    # Misc
-    p.add_argument('--savemodel', default='none')
-    p.add_argument('--restart', action='store_true', default=True)
-    p.add_argument('--no-restart', dest='restart', action='store_false')
-    # Dask parallel
-    p.add_argument('--parallel', action='store_true', default=False)
-    p.add_argument('--nworkers', type=int, default=None)
-    p.add_argument('--scheduler-address', default=None)
-    p.add_argument('--threads-per-worker', type=int, default=1)
-    p.add_argument('--memory-limit', default='auto')
-    p.add_argument('--local-directory', default=None)
-    # Cluster backend
-    p.add_argument(
-        '--cluster-type',
-        default='local',
-        choices=['local', 'slurm', 'address'],
-        help='Dask cluster backend (default: local)',
-    )
-    # SLURM options (only used with --cluster-type slurm)
-    p.add_argument('--slurm-queue', default=None, help='SLURM partition name')
-    p.add_argument('--slurm-account', default=None, help='SLURM account')
-    p.add_argument('--slurm-walltime', default='04:00:00', help='Per-job wall time')
-    p.add_argument('--slurm-job-mem', default='20GB', help='Per-job memory')
-    p.add_argument('--slurm-cores-per-job', type=int, default=1, help='CPUs per SLURM job')
-    p.add_argument('--slurm-python', default=None, help='Python path on compute nodes')
-    p.add_argument('--slurm-local-directory', default=None, help='Worker scratch dir')
-    p.add_argument('--slurm-log-directory', default='logs', help='SLURM log directory')
-    # Logging
-    p.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'])
-
-    # ---- Subcommands ----
-    sub = p.add_subparsers(dest='subcommand')
-
-    # pclean submit
-    sp = sub.add_parser(
-        'submit',
-        help='Generate and submit a SLURM coordinator job',
-        description=(
-            'Submit a pclean YAML config as a SLURM coordinator job. '
-            'The coordinator activates the pixi environment, runs '
-            'python -m pclean --pconfig <config>, and dask-jobqueue '
-            'spawns worker jobs automatically.'
-        ),
-    )
-    sp.add_argument('submit_config', metavar='CONFIG', help='Path to a pclean YAML config file')
-    sp.add_argument('--workdir', default=None, help='Working directory for imaging output (overrides YAML submit.workdir)')
-    sp.add_argument('--pixi-project-dir', default=None, help='Root of the pclean pixi project')
-    sp.add_argument('--pixi-env', default='forge', help='Pixi environment name (default: forge)')
-    sp.add_argument('--coordinator-mem', default='8G', help='Coordinator job memory (default: 8G)')
-    sp.add_argument('--coordinator-cpus', type=int, default=2, help='Coordinator job CPUs (default: 2)')
-    sp.add_argument('--coordinator-walltime', default='24:00:00', help='Coordinator wall time (default: 24:00:00)')
-    sp.add_argument('--coordinator-job-name', default='pclean-coordinator', help='Coordinator SLURM job name')
-    sp.add_argument('--log-dir', default=None, help='Log directory (default: <pixi-project-dir>/logs)')
-    sp.add_argument('--psrecord', action=argparse.BooleanOptionalAction, default=True, help='Wrap in psrecord (default: True)')
-    sp.add_argument('--dry-run', action='store_true', default=False, help='Print the sbatch script without submitting')
-
-    return p
+    """Build the CLI parser from the centralized config-derived builder.
+    
+    This ensures all defaults match PcleanConfig pydantic models,
+    preventing discrepancies between CLI and YAML/Python API entry points.
+    """
+    return build_cli_parser()
 
 
 def main(argv=None):
