@@ -360,15 +360,16 @@ class DaskClusterManager:
             # dask-jobqueue uses the same job_name for every sbatch job.
             # Subclass SLURMJob to append a sequential index so each worker
             # is distinguishable in ``squeue`` output (e.g. pclean-w-0, pclean-w-1).
-            import itertools
 
-            counter = itertools.count()
+            # import itertools
+            # counter = itertools.count()
 
             class _NumberedSLURMJob(SLURMJob):
                 def __init__(self, *args, **kwargs):
                     jn = kwargs.get('job_name')
                     if jn is not None:
-                        kwargs['job_name'] = f'{jn}-worker{next(counter)}'
+                        # kwargs['job_name'] = f'{jn}-worker{next(counter)}'
+                        kwargs['job_name'] = f'{jn}'
                     super().__init__(*args, **kwargs)
                     # Merge stderr into the same file as stdout so each
                     # worker produces a single .out log instead of
