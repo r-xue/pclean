@@ -1,8 +1,5 @@
 """Tests for pclean.parallel.submit — sbatch script generation and submission."""
 
-import os
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

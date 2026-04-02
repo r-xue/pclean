@@ -96,7 +96,7 @@ These control each **worker** SLURM job (passed to
 | `walltime` | `04:00:00` | Per-worker wall time (`--time`) |
 | `job_mem` | `20GB` | Per-worker memory (`--mem`); must cover CASA RSS peak |
 | `cores_per_job` | `1` | CPUs per worker; 1 is sufficient (CASA imaging is single-threaded) |
-| `job_name` | `null` | Worker job name base (auto-suffixed: `-1`, `-2`, …) |
+| `job_name` | `null` | Worker job name base (auto-suffixed: `-0`, `-1`, …) |
 | `job_extra_directives` | `[]` | Extra `#SBATCH` lines for workers |
 | `python` | `null` | Python executable path on compute nodes |
 | `local_directory` | `null` | Scratch directory on compute nodes |
@@ -128,7 +128,7 @@ These control the **coordinator** sbatch script:
 | `parallel` | `false` | Enable parallel imaging |
 | `nworkers` | `null` | Number of workers (= SLURM jobs in slurm mode) |
 | `cube_chunksize` | `-1` | Channels per sub-cube (`-1` = auto: `nchan / nworkers`) |
-| `concat_mode` | `auto` | Sub-cube concatenation: `auto`, `paged`, or `adios2` |
+| `concat_mode` | `auto` | Sub-cube concatenation: `auto`, `paged`, `virtual`, or `movevirtual` |
 | `keep_subcubes` | `false` | Keep individual sub-cube images after concatenation |
 
 ---
@@ -192,7 +192,7 @@ The output cube (IRC+10216, SPW 25, 1000 channels at 128×128):
    - Partitions the frequency axis into sub-cubes.
    - Dispatches sub-cube imaging tasks via Dask futures.
    - Waits for completion, concatenates results.
-   - `SLURMCluster.close()` scancels all worker jobs.
+   - `SLURMCluster.close()` cancels all worker jobs.
 
 ---
 

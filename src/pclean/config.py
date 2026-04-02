@@ -421,7 +421,7 @@ class PcleanConfig(BaseModel):
         # Submit/coordinator flat keys (coordinator_* prefix -> nested submit.*)
         _coordinator_prefix = 'coordinator_'
         # Submit flat keys that don't use the coordinator_ prefix
-        _submit_keys = {'pixi_project_dir', 'pixi_env', 'psrecord'}
+        _submit_keys = {'pixi_project_dir', 'pixi_env', 'psrecord', 'workdir', 'log_dir'}
         # Submit extra_sbatch
         _submit_extra_sbatch_key = 'extra_sbatch'
         sub: dict[str, Any] = {}
@@ -452,7 +452,7 @@ class PcleanConfig(BaseModel):
                 slm[slurm_field] = v
             if k.startswith(_coordinator_prefix):
                 sub[k] = v
-            if k in _submit_keys:
+            if k in _submit_keys or k in {'workdir', 'log_dir'}:
                 sub[k] = v
             if k == _submit_extra_sbatch_key:
                 sub[k] = v

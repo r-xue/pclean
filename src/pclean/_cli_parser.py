@@ -38,60 +38,134 @@ def _d(model: type[BaseModel], field: str) -> Any:
 # Helpers for common argparse patterns
 # ---------------------------------------------------------------------------
 
-def _bool_opt(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-               field: str, **extra: Any) -> None:
+def _bool_opt(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    **extra: Any,
+) -> None:
     """Add ``--flag`` / ``--no-flag`` pair with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest,
-                   action=argparse.BooleanOptionalAction,
-                   default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        action=argparse.BooleanOptionalAction,
+        default=_d(model, field),
+        **extra,
+    )
 
 
-def _str(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-          field: str, **extra: Any) -> None:
+def _str(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    **extra: Any,
+) -> None:
     """Add a string argument with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest, default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        default=_d(model, field),
+        **extra,
+    )
 
 
-def _int(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-          field: str, **extra: Any) -> None:
+def _int(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    **extra: Any,
+) -> None:
     """Add an int argument with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest, type=int,
-                   default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        type=int,
+        default=_d(model, field),
+        **extra,
+    )
 
 
-def _float(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-            field: str, **extra: Any) -> None:
+def _float(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    **extra: Any,
+) -> None:
     """Add a float argument with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest, type=float,
-                   default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        type=float,
+        default=_d(model, field),
+        **extra,
+    )
 
 
-def _list_str(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-               field: str, nargs: str = '*', **extra: Any) -> None:
+def _list_str(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    nargs: str = '*',
+    **extra: Any,
+) -> None:
     """Add a string-list argument with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest, nargs=nargs,
-                   default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        nargs=nargs,
+        default=_d(model, field),
+        **extra,
+    )
 
 
-def _list_int(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-               field: str, nargs: str = '*', **extra: Any) -> None:
+def _list_int(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    nargs: str = '*',
+    **extra: Any,
+) -> None:
     """Add an int-list argument with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest, nargs=nargs, type=int,
-                   default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        nargs=nargs,
+        type=int,
+        default=_d(model, field),
+        **extra,
+    )
 
 
-def _list_float(p: argparse.ArgumentParser, flag: str, model: type[BaseModel],
-                 field: str, nargs: str = '*', **extra: Any) -> None:
+def _list_float(
+    p: argparse.ArgumentParser,
+    flag: str,
+    model: type[BaseModel],
+    field: str,
+    nargs: str = '*',
+    **extra: Any,
+) -> None:
     """Add a float-list argument with default from pydantic model."""
     dest = flag.replace('-', '_')
-    p.add_argument(f'--{flag}', dest=dest, nargs=nargs, type=float,
-                   default=_d(model, field), **extra)
+    p.add_argument(
+        f'--{flag}',
+        dest=dest,
+        nargs=nargs,
+        type=float,
+        default=_d(model, field),
+        **extra,
+    )
 
 
 # ---------------------------------------------------------------------------

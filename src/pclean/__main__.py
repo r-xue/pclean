@@ -7,7 +7,7 @@ Usage::
         --parallel --nworkers 8
 
     # Or with a YAML config file:
-    python -m pclean --pconfig pclean_config.yaml --cluster.nworkers 48
+    python -m pclean --pconfig pclean_config.yaml --nworkers 48
     # Submit a SLURM coordinator job:
     python -m pclean submit config.yaml --workdir /scratch/run_01
 All tclean parameters are supported as ``--<name> <value>`` flags.
@@ -26,14 +26,14 @@ from pclean._cli_parser import build_cli_parser
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser from the centralized config-derived builder.
-    
+
     This ensures all defaults match PcleanConfig pydantic models,
     preventing discrepancies between CLI and YAML/Python API entry points.
     """
     return build_cli_parser()
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments, configure logging, and run pclean.
 
     Args:
@@ -60,25 +60,40 @@ def main(argv=None):
         yaml_cfg = PcleanConfig.from_yaml(args.submit_config)
         base = yaml_cfg.cluster.submit.model_dump()
 
-        # CLI overrides (only apply non-default values)
+        # Determine parser defaults for submit-related options so we do not
+        # duplicate hardcoded defaults here. This keeps the overlay logic
+        # in sync with the single source of truth in the CLI builder.
+        submit_defaults = {
+            'pixi_project_dir': parser.get_default('pixi_project_dir'),
+            'pixi_env': parser.get_default('pixi_env'),
+            'coordinator_mem': parser.get_default('coordinator_mem'),
+            'coordinator_cpus': parser.get_default('coordinator_cpus'),
+            'coordinator_walltime': parser.get_default('coordinator_walltime'),
+            'coordinator_job_name': parser.get_default('coordinator_job_name'),
+            'log_dir': parser.get_default('log_dir'),
+            'psrecord': parser.get_default('psrecord'),
+            'workdir': parser.get_default('workdir'),
+        }
+
+        # CLI overrides (only apply values that differ from parser defaults)
         cli_overrides: dict = {}
-        if args.pixi_project_dir is not None:
+        if args.pixi_project_dir != submit_defaults['pixi_project_dir']:
             cli_overrides['pixi_project_dir'] = args.pixi_project_dir
-        if args.pixi_env != 'forge':
+        if args.pixi_env != submit_defaults['pixi_env']:
             cli_overrides['pixi_env'] = args.pixi_env
-        if args.coordinator_mem != '8G':
+        if args.coordinator_mem != submit_defaults['coordinator_mem']:
             cli_overrides['coordinator_mem'] = args.coordinator_mem
-        if args.coordinator_cpus != 2:
+        if args.coordinator_cpus != submit_defaults['coordinator_cpus']:
             cli_overrides['coordinator_cpus'] = args.coordinator_cpus
-        if args.coordinator_walltime != '24:00:00':
+        if args.coordinator_walltime != submit_defaults['coordinator_walltime']:
             cli_overrides['coordinator_walltime'] = args.coordinator_walltime
-        if args.coordinator_job_name != 'pclean-coordinator':
+        if args.coordinator_job_name != submit_defaults['coordinator_job_name']:
             cli_overrides['coordinator_job_name'] = args.coordinator_job_name
-        if args.log_dir is not None:
+        if args.log_dir != submit_defaults['log_dir']:
             cli_overrides['log_dir'] = args.log_dir
-        if args.psrecord is not True:
+        if args.psrecord != submit_defaults['psrecord']:
             cli_overrides['psrecord'] = args.psrecord
-        if args.workdir is not None:
+        if args.workdir != submit_defaults['workdir']:
             cli_overrides['workdir'] = args.workdir
 
         base.update(cli_overrides)

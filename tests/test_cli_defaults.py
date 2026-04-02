@@ -6,10 +6,8 @@ defaults are now derived from PcleanConfig via _cli_parser.py.
 """
 
 import argparse
-import pytest
 
 from pclean._cli_parser import build_cli_parser
-from pclean.config import PcleanConfig
 
 
 class TestCliDefaultsMatchConfig:

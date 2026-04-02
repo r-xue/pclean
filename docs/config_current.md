@@ -233,7 +233,7 @@ PcleanConfig.from_flat_kwargs()  # build config
 |------|------|
 | `src/pclean/config.py` | Sub-model definitions, `PcleanConfig`, YAML I/O, merge, flat-kwargs bridge, all `to_casa_*()` methods, `make_subcube_config()` |
 | `src/pclean/pclean.py` | `pclean()` entry point; builds `PcleanConfig`, dispatches to engines |
-| `src/pclean/__main__.py` | CLI; `--pconfig`, `--preset`, `--dump-config`, dot-notation overrides |
+| `src/pclean/__main__.py` | CLI; `--pconfig`, `--preset`, `--dump-config` |
 | `src/pclean/imaging/serial_imager.py` | Accepts `PcleanConfig`; pre-computes CASA dicts in `__init__` |
 | `src/pclean/parallel/worker_tasks.py` | Dask worker functions; cube tasks accept config dicts, continuum tasks accept CASA bundles |
 | `src/pclean/parallel/cube_parallel.py` | Cube engine; accepts `PcleanConfig`, serializes subcube configs |
