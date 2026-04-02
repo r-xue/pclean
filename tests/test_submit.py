@@ -230,7 +230,7 @@ class TestSubmitPcleanSlurm:
                 workdir=tmp_path / 'work',
             )
         script_path = tmp_path / 'work' / 'submit.sh'
-        assert script_path.stat().st_mode & 0o755
+        assert os.access(script_path, os.X_OK)
 
     def test_sbatch_unparseable_stdout(self, tmp_path):
         """If sbatch stdout doesn't match expected pattern, return raw stdout."""
