@@ -60,20 +60,11 @@ def main(argv: list[str] | None = None) -> None:
         yaml_cfg = PcleanConfig.from_yaml(args.submit_config)
         base = yaml_cfg.cluster.submit.model_dump()
 
-        # Determine parser defaults for submit-related options so we do not
-        # duplicate hardcoded defaults here. This keeps the overlay logic
-        # in sync with the single source of truth in the CLI builder.
-        submit_defaults = {
-            'pixi_project_dir': parser.get_default('pixi_project_dir'),
-            'pixi_env': parser.get_default('pixi_env'),
-            'coordinator_mem': parser.get_default('coordinator_mem'),
-            'coordinator_cpus': parser.get_default('coordinator_cpus'),
-            'coordinator_walltime': parser.get_default('coordinator_walltime'),
-            'coordinator_job_name': parser.get_default('coordinator_job_name'),
-            'log_dir': parser.get_default('log_dir'),
-            'psrecord': parser.get_default('psrecord'),
-            'workdir': parser.get_default('workdir'),
-        }
+        # Determine defaults from SubmitConfig (the pydantic model is the
+        # single source of truth). The submit-related CLI flags are on the
+        # *subparser* sp, not the top-level parser, so parser.get_default()
+        # would return None for all of them and break the override logic.
+        submit_defaults = SubmitConfig().model_dump()
 
         # CLI overrides (only apply values that differ from parser defaults)
         cli_overrides: dict = {}
