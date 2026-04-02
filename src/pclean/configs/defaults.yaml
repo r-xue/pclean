@@ -64,6 +64,7 @@ weight:
   noise: 1.0Jy
   npixels: 0
   uvtaper: []
+  fracbw: null
 deconvolution:
   deconvolver: hogbom
   scales: []
@@ -89,6 +90,7 @@ deconvolution:
   minpercentchange: 0.0
   verbose: false
   fastnoise: true
+  python_automask: true
 iteration:
   niter: 0
   gain: 0.1
@@ -122,14 +124,27 @@ cluster:
   cube_chunksize: -1
   keep_subcubes: false
   keep_partimages: false
+  concat_mode: auto
   slurm:
     queue: null
     account: null
-    walltime: 04:00:00
+    walltime: 24:00:00
     job_mem: 20GB
     cores_per_job: 1
+    job_name: null
     job_extra_directives: []
     python: null
     local_directory: null
     log_directory: logs
     job_script_prologue: []
+  submit:
+    workdir: null
+    pixi_project_dir: null
+    pixi_env: forge
+    coordinator_mem: 8G
+    coordinator_cpus: 2
+    coordinator_walltime: '24:00:00'
+    coordinator_job_name: pclean-coordinator
+    extra_sbatch: []
+    log_dir: null
+    psrecord: true

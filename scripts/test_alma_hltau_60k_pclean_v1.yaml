@@ -1,0 +1,100 @@
+# pclean config — ALMA HL-Tau cube imaging (60k)
+#
+# Usage (SLURM):
+#   cd /users/rxue/Workspace/naasc/tickets/pclean/pclean
+#   pixi shell -e forge
+#   pclean submit scripts/test_alma_hltau_60k_pclean_v1.yaml
+
+# ── Data selection ────────────────────────────────────────────────
+selection:
+  vis:
+    - /users/rxue/Workspace/naasc/datasets/alma_if/hltau_wsu/hltau_60k.0.ms
+  field:    HL_Tau
+  spw:      ['0']
+  intent:   OBSERVE_TARGET#ON_SOURCE
+  datacolumn: data
+
+# ── Image parameters ─────────────────────────────────────────────
+image:
+  imagename: pclean.hltau_60k.0.cube.I
+  imsize:    [2250, 2250]          # full-field: [2250, 2250]
+  cell:      '0.025arcsec'
+  phasecenter: ''
+  stokes:    I
+  specmode:  cube
+  nchan:    2200                 # nchan:     59599 
+  start:     '8.63699e+10Hz'
+  width:     '30515.9Hz'
+  outframe:  LSRK
+  perchanweightdensity: true
+
+# ── Gridding ─────────────────────────────────────────────────────
+grid:
+  gridder:     standard
+  mosweight:   false
+  usepointing: false
+  pblimit:     0.2
+
+# ── Weighting ────────────────────────────────────────────────────
+weight:
+  weighting: briggsbwtaper
+  robust:    0.5
+  npixels:   0
+
+# ── Deconvolution / masking ──────────────────────────────────────
+deconvolution:
+  deconvolver:  hogbom
+  restoration:  false
+  pbcor:        false
+  # restoringbeam: common
+  usemask:            auto-multithresh
+  sidelobethreshold:  2.5
+  noisethreshold:     5.0
+  lownoisethreshold:  1.5
+  negativethreshold:  7.0
+  minbeamfrac:        0.3
+  growiterations:     50
+  dogrowprune:        true
+  minpercentchange:   1.0
+  fastnoise:          true
+  python_automask:    false
+
+# ── Iteration control ────────────────────────────────────────────
+iteration:
+  niter:       0
+  threshold:   '30mJy'          # per-plane RMS ≈ 14 mJy
+  # threshold: '6.5mJy'         # deep clean
+  # threshold: '2.0mJy'         # aggressive
+  nsigma:      0.0
+  interactive: false
+  fullsummary: false
+
+# ── Miscellaneous ────────────────────────────────────────────────
+misc:
+  savemodel: none
+
+# ── Cluster / parallelism ────────────────────────────────────────
+cluster:
+  parallel:        true
+  nworkers:        16
+  cube_chunksize:  -1
+  concat_mode:     paged
+  keep_subcubes:   false
+  type:            slurm
+
+  slurm:
+    queue:    batch
+    job_mem:  20GB
+    walltime:  '14-00:00:00'
+    job_name: test_alma_hltau_60k_pclean_v1-worker
+    python:   /users/rxue/Workspace/naasc/tickets/pclean/pclean/.pixi/envs/forge/bin/python
+
+  submit:
+    workdir:              /users/rxue/Workspace/naasc/tests/misc/hltau_cube_imaging/alma_hltau_60k_pclean_v1
+    pixi_project_dir:     /users/rxue/Workspace/naasc/tickets/pclean/pclean
+    pixi_env:             forge
+    coordinator_mem:      60G
+    coordinator_cpus:     4
+    coordinator_walltime: '14-00:00:00'
+    coordinator_job_name: test_alma_hltau_60k_pclean_v1-coordinator
+    psrecord:             true

@@ -187,3 +187,37 @@ class TestConvergenceOrder:
         assert 'setupmask' not in call_order, (
             'setupmask() should not be called when niter=0'
         )
+
+    def test_niter_zero_with_restoration(self, mock_casatools):
+        """restoration=True must still call restore() even when niter=0."""
+        call_order: list[str] = []
+        mock_casatools.synthesisdeconvolver.return_value.restore.side_effect = (
+            lambda: call_order.append('restore')
+        )
+        mock_casatools.synthesisdeconvolver.return_value.setupmask.side_effect = (
+            lambda: call_order.append('setupmask')
+        )
+
+        with patch.dict('sys.modules', {'casatools': mock_casatools}):
+            import pclean.imaging.serial_imager as mod
+
+            mod._casatools = None
+
+            from pclean.imaging.serial_imager import SerialImager
+            from pclean.config import PcleanConfig
+
+            params = PcleanConfig.from_flat_kwargs(
+                vis='test.ms',
+                imagename='niter0_restore_test',
+                niter=0,
+                restoration=True,
+                specmode='mfs',
+            )
+            SerialImager(params).run()
+
+        assert 'restore' in call_order, (
+            'restore() must be called when restoration=True even with niter=0'
+        )
+        assert 'setupmask' not in call_order, (
+            'setupmask() should not be called when niter=0'
+        )

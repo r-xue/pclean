@@ -199,3 +199,4 @@ src/pclean/
 | [briggsbwtaper.md](briggsbwtaper.md) | `briggsbwtaper` weighting analysis |
 | [per_channel_convergence.md](per_channel_convergence.md) | Per-channel convergence strategy |
 | [image_concatenation.md](image_concatenation.md) | Sub-cube concatenation details |
+| [single_source_of_truth.md](single_source_of_truth.md) | Why config defaults are centralized in `config.py` |
