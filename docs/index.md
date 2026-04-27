@@ -6,6 +6,7 @@
 :caption: Guides
 
 dev_guide
+casa_channel_build
 config_current
 update_defaults
 slurm_submit_guide
